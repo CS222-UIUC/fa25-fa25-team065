@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AuthService, LoginCredentials } from '../services/authService';
+import { AuthService, RegisterCredentials } from '../services/authService';
 
-const LoginPage: React.FC = () => {
+const RegisterPage: React.FC = () => {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
+    username: '',
     email: '',
-    password: ''
+    password: '',
+    confirmPassword: ''
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -27,19 +29,32 @@ const LoginPage: React.FC = () => {
     setError('');
 
     // Basic validation
-    if (!formData.email.trim() || !formData.password.trim()) {
+    if (!formData.username.trim() || !formData.email.trim() || !formData.password.trim()) {
       setError('Please fill in all fields');
       setIsLoading(false);
       return;
     }
 
+    if (formData.password !== formData.confirmPassword) {
+      setError('Passwords do not match');
+      setIsLoading(false);
+      return;
+    }
+
+    if (formData.password.length < 6) {
+      setError('Password must be at least 6 characters');
+      setIsLoading(false);
+      return;
+    }
+
     try {
-      const credentials: LoginCredentials = {
+      const credentials: RegisterCredentials = {
+        username: formData.username,
         email: formData.email,
         password: formData.password
       };
 
-      const user = await AuthService.signIn(credentials);
+      const user = await AuthService.signUp(credentials);
       
       // Store user session
       localStorage.setItem('user', JSON.stringify({ 
@@ -50,7 +65,7 @@ const LoginPage: React.FC = () => {
       
       navigate('/dashboard'); // Redirect to dashboard
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed. Please try again.');
+      setError(err instanceof Error ? err.message : 'Registration failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -76,16 +91,33 @@ const LoginPage: React.FC = () => {
           </button>
           
           <h2 className="text-3xl font-bold text-secondary-900 mb-2">
-            Welcome to Splitify
+            Create Your Account
           </h2>
           <p className="text-secondary-600">
-            Sign in to start managing your expenses
+            Join Splitify to start managing your expenses
           </p>
         </div>
 
-        {/* Login Form */}
+        {/* Register Form */}
         <div className="bg-white py-8 px-6 shadow-lg rounded-xl border border-secondary-200">
           <form className="space-y-6" onSubmit={handleSubmit}>
+            <div>
+              <label htmlFor="username" className="block text-sm font-medium text-secondary-700 mb-2">
+                Username
+              </label>
+              <input
+                id="username"
+                name="username"
+                type="text"
+                required
+                value={formData.username}
+                onChange={handleInputChange}
+                className="input-field"
+                placeholder="Choose a username"
+                disabled={isLoading}
+              />
+            </div>
+
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-secondary-700 mb-2">
                 Email
@@ -115,7 +147,24 @@ const LoginPage: React.FC = () => {
                 value={formData.password}
                 onChange={handleInputChange}
                 className="input-field"
-                placeholder="Enter your password"
+                placeholder="Create a password"
+                disabled={isLoading}
+              />
+            </div>
+
+            <div>
+              <label htmlFor="confirmPassword" className="block text-sm font-medium text-secondary-700 mb-2">
+                Confirm Password
+              </label>
+              <input
+                id="confirmPassword"
+                name="confirmPassword"
+                type="password"
+                required
+                value={formData.confirmPassword}
+                onChange={handleInputChange}
+                className="input-field"
+                placeholder="Confirm your password"
                 disabled={isLoading}
               />
             </div>
@@ -125,26 +174,6 @@ const LoginPage: React.FC = () => {
                 <p className="text-red-600 text-sm">{error}</p>
               </div>
             )}
-
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <input
-                  id="remember-me"
-                  name="remember-me"
-                  type="checkbox"
-                  className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-secondary-300 rounded"
-                />
-                <label htmlFor="remember-me" className="ml-2 block text-sm text-secondary-700">
-                  Remember me
-                </label>
-              </div>
-
-              <div className="text-sm">
-                <a href="#" className="font-medium text-primary-600 hover:text-primary-500">
-                  Forgot password?
-                </a>
-              </div>
-            </div>
 
             <div>
               <button
@@ -158,43 +187,30 @@ const LoginPage: React.FC = () => {
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    Signing in...
+                    Creating Account...
                   </>
                 ) : (
-                  'Sign In'
+                  'Create Account'
                 )}
               </button>
             </div>
 
             <div className="text-center">
               <p className="text-secondary-600">
-                Don't have an account?{' '}
+                Already have an account?{' '}
                 <button 
-                  onClick={() => navigate('/register')}
+                  onClick={() => navigate('/login')}
                   className="font-medium text-primary-600 hover:text-primary-500"
                 >
-                  Sign up here
+                  Sign in here
                 </button>
               </p>
             </div>
           </form>
-        </div>
-
-        {/* Firebase Setup Instructions */}
-        <div className="bg-primary-50 border border-primary-200 rounded-lg p-4">
-          <h3 className="text-sm font-medium text-primary-800 mb-2">Firebase Setup Required</h3>
-          <p className="text-sm text-primary-700 mb-2">
-            To use this login, you need to configure Firebase:
-          </p>
-          <ol className="text-sm text-primary-700 list-decimal list-inside space-y-1">
-            <li>Create a Firebase project at <a href="https://console.firebase.google.com" target="_blank" rel="noopener noreferrer" className="underline">console.firebase.google.com</a></li>
-            <li>Enable Authentication and set up Email/Password sign-in</li>
-            <li>Update the config in <code className="bg-primary-100 px-1 rounded">src/firebase/config.ts</code></li>
-          </ol>
         </div>
       </div>
     </div>
   );
 };
 
-export default LoginPage;
+export default RegisterPage;
