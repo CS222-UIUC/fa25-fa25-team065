@@ -49,8 +49,11 @@ const LandingPage: React.FC = () => {
             >
               Start Splitting Bills
             </button>
-            <button className="btn-secondary text-lg px-8 py-3">
-              Learn More
+            <button 
+              onClick={() => navigate('/register')}
+              className="btn-secondary text-lg px-8 py-3"
+            >
+              Create Account
             </button>
           </div>
 
