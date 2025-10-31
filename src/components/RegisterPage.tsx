@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AuthService, RegisterCredentials } from '../services/authService';
+import { SupabaseAuthService, SupabaseRegisterCredentials } from '../services/supabaseAuthService';
+import { getOrCreateUserByAuth } from '../lib/supabase';
 
 const RegisterPage: React.FC = () => {
   const navigate = useNavigate();
@@ -46,7 +47,7 @@ const RegisterPage: React.FC = () => {
     }
 
     try {
-      const credentials: RegisterCredentials = {
+      const credentials: SupabaseRegisterCredentials = {
         username: formData.username,
         email: formData.email,
         password: formData.password
