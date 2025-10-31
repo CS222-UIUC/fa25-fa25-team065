@@ -1,4 +1,5 @@
 import React, { useRef, useState } from "react";
+import { supabase } from '../supabase/client';
 
 // Pure UI. No Firebase. Dropzone + preview + metadata form + mock submit.
 // TailwindCSS required. Default export a single page component.
@@ -91,25 +92,74 @@ export default function ReceiptUploadUI() {
     if (inputRef.current) inputRef.current.value = "";
   };
 
-  // Mock submit just animates a progress bar then clears
+  // Submit: upload file to Supabase Storage and insert row in receipts table
   const submit = async () => {
     if (!receipt?.file) {
       setError("Pick a file first");
       return;
     }
-    setIsSubmitting(true);
-    setError("");
-    setProgress(0);
 
-    // simple mock animation
-    const steps = [5, 18, 34, 52, 71, 86, 100];
-    for (const p of steps) {
-      // eslint-disable-next-line no-await-in-loop
-      await new Promise((r) => setTimeout(r, 200));
-      setProgress(p);
+    const rawUser = localStorage.getItem('user');
+    if (!rawUser) {
+      setError("You must be logged in");
+      return;
     }
-    // keep the UI state so user sees success; you can reset() if preferred
-    setIsSubmitting(false);
+    const user = JSON.parse(rawUser) as { id: string; email: string; username: string | null };
+
+    try {
+      setIsSubmitting(true);
+      setError("");
+      setProgress(0);
+
+      // 1) Upload file to Storage bucket 'receipts' at <user_id>/<receipt_id>.<ext>
+      const ext = (receipt.file.name.split('.').pop() || 'bin').toLowerCase();
+      const storagePath = `${user.id}/${receipt.id}.${ext}`;
+
+      const { error: uploadErr } = await supabase.storage
+        .from('receipts')
+        .upload(storagePath, receipt.file, {
+          contentType: receipt.mimeType || 'application/octet-stream',
+          upsert: false,
+        });
+      if (uploadErr) {
+        setIsSubmitting(false);
+        setError(`Upload failed: ${uploadErr.message}`);
+        return;
+      }
+
+      setProgress(50);
+
+      // 2) Get a public URL (bucket must be public). For private, switch to signed URLs.
+      const { data: pub } = supabase.storage.from('receipts').getPublicUrl(storagePath);
+      const receiptUrl = pub?.publicUrl || null;
+
+      // 3) Insert into receipts with your exact schema fields
+      const totalNum = receipt.total?.trim() ? parseFloat(receipt.total) : null;
+      const { error: insertErr } = await supabase
+        .from('receipts')
+        .insert({
+          user_id: user.id,
+          merchant_name: receipt.merchant || null,
+          total_amount: totalNum,
+          tax_amount: null,
+          tip_amount: null,
+          receipt_url: receiptUrl,
+          parsed: false,
+        });
+      if (insertErr) {
+        setIsSubmitting(false);
+        setError(`Save failed: ${insertErr.message}`);
+        return;
+      }
+
+      setProgress(100);
+      setIsSubmitting(false);
+      // Optionally reset() to clear the UI
+      // reset();
+    } catch (e) {
+      setIsSubmitting(false);
+      setError(e instanceof Error ? e.message : 'Unexpected error');
+    }
   };
 
   return (
