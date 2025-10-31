@@ -1,13 +1,13 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AuthService } from '../services/authService';
+import { SupabaseAuthService } from '../services/supabaseAuthService';
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
 
   const handleSignOut = async () => {
     try {
-      await AuthService.signOut();
+      await SupabaseAuthService.signOut();
       localStorage.removeItem('user');
       navigate('/');
     } catch (error) {
