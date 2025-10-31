@@ -5,6 +5,7 @@ import LoginPage from './components/LoginPage';
 import RegisterPage from './components/RegisterPage';
 import Dashboard from './components/Dashboard';
 import ReceiptUploadUI from './components/ReceiptUploadUI';
+import ThankYouPage from './components/ThankYouPage';
 
 function App() {
   return (
@@ -16,6 +17,7 @@ function App() {
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/upload" element={<ReceiptUploadUI />} />
+          <Route path="/thank-you" element={<ThankYouPage />} />
         </Routes>
       </div>
     </Router>
