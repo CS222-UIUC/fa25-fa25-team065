@@ -1,13 +1,13 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AuthService } from '../services/authService';
+import { SupabaseAuthService } from '../services/supabaseAuthService';
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
 
   const handleSignOut = async () => {
     try {
-      await AuthService.signOut();
+      await SupabaseAuthService.signOut();
       localStorage.removeItem('user');
       navigate('/');
     } catch (error) {
@@ -29,7 +29,7 @@ const Dashboard: React.FC = () => {
               <h1 className="text-2xl font-bold text-primary-600">Splitify</h1>
             </div>
             <div className="flex items-center space-x-4">
-              <span className="text-secondary-600">Welcome, {user.displayName || user.email}!</span>
+              <span className="text-secondary-600">Welcome, {user.email || 'User'}!</span>
               <button 
                 onClick={handleSignOut}
                 className="btn-secondary"
@@ -62,15 +62,7 @@ const Dashboard: React.FC = () => {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
                 </div>
-                <span className="text-secondary-700">Firebase Authentication is connected</span>
-              </div>
-              <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                  <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
-                <span className="text-secondary-700">User session is active</span>
+                <span className="text-secondary-700">Supabase Authentication is connected</span>
               </div>
               <div className="flex items-center space-x-3">
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center ${

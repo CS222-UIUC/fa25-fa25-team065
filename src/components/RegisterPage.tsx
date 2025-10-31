@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AuthService, RegisterCredentials } from '../services/authService';
+import { SupabaseAuthService, SupabaseRegisterCredentials } from '../services/supabaseAuthService';
+import { getOrCreateUserByAuth } from '../lib/supabase';
 
 const RegisterPage: React.FC = () => {
   const navigate = useNavigate();
@@ -19,7 +20,6 @@ const RegisterPage: React.FC = () => {
       ...prev,
       [name]: value
     }));
-    // Clear error when user starts typing
     if (error) setError('');
   };
 
@@ -28,7 +28,6 @@ const RegisterPage: React.FC = () => {
     setIsLoading(true);
     setError('');
 
-    // Basic validation
     if (!formData.username.trim() || !formData.email.trim() || !formData.password.trim()) {
       setError('Please fill in all fields');
       setIsLoading(false);
@@ -48,22 +47,23 @@ const RegisterPage: React.FC = () => {
     }
 
     try {
-      const credentials: RegisterCredentials = {
+      const credentials: SupabaseRegisterCredentials = {
         username: formData.username,
         email: formData.email,
         password: formData.password
       };
 
-      const user = await AuthService.signUp(credentials);
-      
-      // Store user session
+      const user = await SupabaseAuthService.signUp(credentials);
+      if (!user) throw new Error('Unable to create account');
+
+      const appUserId = await getOrCreateUserByAuth(user.id, user.email ?? null);
+
       localStorage.setItem('user', JSON.stringify({ 
-        uid: user.uid, 
-        email: user.email,
-        displayName: user.displayName 
+        id: user.id,       // auth.users.id
+        email: user.email, // auth email
+        appUserId          // public.users.id
       }));
-      
-      navigate('/dashboard'); // Redirect to dashboard
+      navigate('/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed. Please try again.');
     } finally {
@@ -78,7 +78,6 @@ const RegisterPage: React.FC = () => {
   return (
     <div className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
-        {/* Header */}
         <div className="text-center">
           <button 
             onClick={handleBackToHome}
@@ -98,7 +97,6 @@ const RegisterPage: React.FC = () => {
           </p>
         </div>
 
-        {/* Register Form */}
         <div className="bg-white py-8 px-6 shadow-lg rounded-xl border border-secondary-200">
           <form className="space-y-6" onSubmit={handleSubmit}>
             <div>
