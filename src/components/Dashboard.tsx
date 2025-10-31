@@ -17,11 +17,10 @@ const Dashboard: React.FC = () => {
 
   const user = JSON.parse(localStorage.getItem('user') || '{}');
 
-  const uploadReady = true; // checkmark hard-code right now for receipt upload
+  const uploadReady = true;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 to-secondary-50">
-      {/* Navigation */}
       <nav className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
@@ -29,7 +28,7 @@ const Dashboard: React.FC = () => {
               <h1 className="text-2xl font-bold text-primary-600">Splitify</h1>
             </div>
             <div className="flex items-center space-x-4">
-              <span className="text-secondary-600">Welcome, {user.displayName || user.email}!</span>
+              <span className="text-secondary-600">Welcome, {user.username || user.email}!</span>
               <button 
                 onClick={handleSignOut}
                 className="btn-secondary"
@@ -41,7 +40,6 @@ const Dashboard: React.FC = () => {
         </div>
       </nav>
 
-      {/* Dashboard Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="text-center">
           <h1 className="text-4xl font-bold text-secondary-900 mb-4">
@@ -62,7 +60,7 @@ const Dashboard: React.FC = () => {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
                 </div>
-                <span className="text-secondary-700">Firebase Authentication is connected</span>
+                <span className="text-secondary-700">Supabase connection is configured</span>
               </div>
               <div className="flex items-center space-x-3">
                 <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
