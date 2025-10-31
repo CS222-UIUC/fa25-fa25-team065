@@ -38,7 +38,6 @@ npm start
 - `npm eject` - Ejects from Create React App (one-way operation)
 
 ## Project Structure
-   asdsa
 ```
 src/
 ├── components/
