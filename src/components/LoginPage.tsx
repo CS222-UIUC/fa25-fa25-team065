@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { SupabaseAuthService, SupabaseLoginCredentials } from '../services/supabaseAuthService';
-import { getOrCreateUserByAuth } from '../lib/supabase';
+import { AuthService, LoginCredentials } from '../services/authService';
 
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
@@ -33,21 +32,19 @@ const LoginPage: React.FC = () => {
     }
 
     try {
-      const credentials: SupabaseLoginCredentials = {
+      const credentials: LoginCredentials = {
         email: formData.email,
         password: formData.password
       };
 
-      const user = await SupabaseAuthService.signIn(credentials);
-      if (!user) throw new Error('Unable to sign in');
+      const user = await AuthService.signIn(credentials);
 
-      const appUserId = await getOrCreateUserByAuth(user.id, user.email ?? null);
-
-      localStorage.setItem('user', JSON.stringify({ 
-        id: user.id,       // auth.users.id
-        email: user.email, // auth email
-        appUserId          // public.users.id
+      localStorage.setItem('user', JSON.stringify({
+        id: user.id,
+        email: user.email,
+        username: user.username
       }));
+
       navigate('/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed. Please try again.');
@@ -177,6 +174,7 @@ const LoginPage: React.FC = () => {
             </div>
           </form>
         </div>
+
       </div>
     </div>
   );
