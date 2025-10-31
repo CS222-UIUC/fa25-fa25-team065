@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AuthService, LoginCredentials } from '../services/authService';
+import { SupabaseAuthService, SupabaseLoginCredentials } from '../services/supabaseAuthService';
+import { getOrCreateUserByAuth } from '../lib/supabase';
 
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
@@ -17,7 +18,6 @@ const LoginPage: React.FC = () => {
       ...prev,
       [name]: value
     }));
-    // Clear error when user starts typing
     if (error) setError('');
   };
 
@@ -26,7 +26,6 @@ const LoginPage: React.FC = () => {
     setIsLoading(true);
     setError('');
 
-    // Basic validation
     if (!formData.email.trim() || !formData.password.trim()) {
       setError('Please fill in all fields');
       setIsLoading(false);
@@ -34,21 +33,22 @@ const LoginPage: React.FC = () => {
     }
 
     try {
-      const credentials: LoginCredentials = {
+      const credentials: SupabaseLoginCredentials = {
         email: formData.email,
         password: formData.password
       };
 
-      const user = await AuthService.signIn(credentials);
-      
-      // Store user session
+      const user = await SupabaseAuthService.signIn(credentials);
+      if (!user) throw new Error('Unable to sign in');
+
+      const appUserId = await getOrCreateUserByAuth(user.id, user.email ?? null);
+
       localStorage.setItem('user', JSON.stringify({ 
-        uid: user.uid, 
-        email: user.email,
-        displayName: user.displayName 
+        id: user.id,       // auth.users.id
+        email: user.email, // auth email
+        appUserId          // public.users.id
       }));
-      
-      navigate('/dashboard'); // Redirect to dashboard
+      navigate('/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed. Please try again.');
     } finally {
@@ -63,7 +63,6 @@ const LoginPage: React.FC = () => {
   return (
     <div className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
-        {/* Header */}
         <div className="text-center">
           <button 
             onClick={handleBackToHome}
@@ -83,7 +82,6 @@ const LoginPage: React.FC = () => {
           </p>
         </div>
 
-        {/* Login Form */}
         <div className="bg-white py-8 px-6 shadow-lg rounded-xl border border-secondary-200">
           <form className="space-y-6" onSubmit={handleSubmit}>
             <div>
@@ -178,19 +176,6 @@ const LoginPage: React.FC = () => {
               </p>
             </div>
           </form>
-        </div>
-
-        {/* Firebase Setup Instructions */}
-        <div className="bg-primary-50 border border-primary-200 rounded-lg p-4">
-          <h3 className="text-sm font-medium text-primary-800 mb-2">Firebase Setup Required</h3>
-          <p className="text-sm text-primary-700 mb-2">
-            To use this login, you need to configure Firebase:
-          </p>
-          <ol className="text-sm text-primary-700 list-decimal list-inside space-y-1">
-            <li>Create a Firebase project at <a href="https://console.firebase.google.com" target="_blank" rel="noopener noreferrer" className="underline">console.firebase.google.com</a></li>
-            <li>Enable Authentication and set up Email/Password sign-in</li>
-            <li>Update the config in <code className="bg-primary-100 px-1 rounded">src/firebase/config.ts</code></li>
-          </ol>
         </div>
       </div>
     </div>
