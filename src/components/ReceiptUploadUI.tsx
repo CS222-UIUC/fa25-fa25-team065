@@ -1,5 +1,7 @@
 import React, { useRef, useState } from "react";
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase/client';
+import { createWorker } from 'tesseract.js';
 
 // Pure UI. No Firebase. Dropzone + preview + metadata form + mock submit.
 // TailwindCSS required. Default export a single page component.
@@ -33,6 +35,7 @@ const MAX_MB = 10;
 
 export default function ReceiptUploadUI() {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const navigate = useNavigate();
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -92,6 +95,50 @@ export default function ReceiptUploadUI() {
     if (inputRef.current) inputRef.current.value = "";
   };
 
+  async function extractTextFromFile(file: File): Promise<string> {
+    const worker = await createWorker('eng');
+    const { data } = await worker.recognize(file);
+    await worker.terminate();
+    return data.text || '';
+  }
+
+  function parseOcrText(text: string): {
+    merchantFromOcr: string | null;
+    totalFromOcr: number | null;
+    items: Array<{ item_name: string; total_price: number | null }>;
+  } {
+    const lines = text
+      .split('\n')
+      .map(l => l.trim())
+      .filter(Boolean);
+
+    const merchantFromOcr = lines[0] || null;
+
+    let totalFromOcr: number | null = null;
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const m = lines[i].match(/\$?\s*(\d+[\.,]\d{2})\b/);
+      if (m) {
+        totalFromOcr = parseFloat(m[1].replace(',', '.'));
+        break;
+      }
+    }
+
+    const items: Array<{ item_name: string; total_price: number | null }> = [];
+    for (const line of lines) {
+      // Heuristic: split on last price-like token
+      const m = line.match(/(.*?)[\s\-:]*\$?\s*(\d+[\.,]\d{2})\s*$/);
+      if (m) {
+        const name = m[1].trim();
+        const price = parseFloat(m[2].replace(',', '.'));
+        if (name && !Number.isNaN(price)) {
+          items.push({ item_name: name, total_price: price });
+        }
+      }
+    }
+
+    return { merchantFromOcr, totalFromOcr, items };
+  }
+
   // Submit: upload file to Supabase Storage and insert row in receipts table
   const submit = async () => {
     if (!receipt?.file) {
@@ -133,29 +180,65 @@ export default function ReceiptUploadUI() {
       const { data: pub } = supabase.storage.from('receipts').getPublicUrl(storagePath);
       const receiptUrl = pub?.publicUrl || null;
 
-      // 3) Insert into receipts with your exact schema fields
-      const totalNum = receipt.total?.trim() ? parseFloat(receipt.total) : null;
-      const { error: insertErr } = await supabase
+      setProgress(60);
+
+      // 3) OCR: extract text, then parse merchant/total and line items
+      const ocrText = await extractTextFromFile(receipt.file);
+      const { merchantFromOcr, totalFromOcr, items } = parseOcrText(ocrText);
+
+      const merchantToSave = (receipt.merchant && receipt.merchant.trim()) ? receipt.merchant : merchantFromOcr;
+      const totalToSave = (receipt.total && receipt.total.trim()) ? parseFloat(receipt.total) : totalFromOcr;
+
+      setProgress(75);
+
+      // 4) Insert receipt row and return id
+      const { data: insertedReceipt, error: insertErr } = await supabase
         .from('receipts')
         .insert({
           user_id: user.id,
-          merchant_name: receipt.merchant || null,
-          total_amount: totalNum,
+          merchant_name: merchantToSave || null,
+          total_amount: (totalToSave ?? null),
           tax_amount: null,
           tip_amount: null,
           receipt_url: receiptUrl,
-          parsed: false,
-        });
-      if (insertErr) {
+          parsed: !!(merchantToSave || totalToSave),
+        })
+        .select('id')
+        .single();
+      if (insertErr || !insertedReceipt) {
         setIsSubmitting(false);
-        setError(`Save failed: ${insertErr.message}`);
+        setError(`Save failed: ${insertErr?.message || 'no id returned'}`);
         return;
+      }
+
+      setProgress(85);
+
+      // 5) Insert parsed line items (best-effort, ignore if none)
+      const simplified = items
+        .filter(it => it.item_name && it.total_price != null)
+        .slice(0, 50) // avoid runaway
+        .map(it => ({
+          receipt_id: insertedReceipt.id,
+          item_name: it.item_name,
+          quantity: null,
+          unit_price: null,
+          total_price: it.total_price,
+          assigned_split_id: null,
+        }));
+
+      if (simplified.length > 0) {
+        const { error: liErr } = await supabase.from('line_items').insert(simplified);
+        if (liErr) {
+          // Non-fatal: keep receipt saved even if items fail
+          // eslint-disable-next-line no-console
+          console.warn('line_items insert error', liErr);
+        }
       }
 
       setProgress(100);
       setIsSubmitting(false);
-      // Optionally reset() to clear the UI
-      // reset();
+      // Redirect to selection page for this receipt
+      navigate(`/receipts/${insertedReceipt.id}/select-items`);
     } catch (e) {
       setIsSubmitting(false);
       setError(e instanceof Error ? e.message : 'Unexpected error');
