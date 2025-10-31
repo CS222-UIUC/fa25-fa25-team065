@@ -70,7 +70,3 @@ This frontend provides the foundation for the Splitify application. Future devel
 - Bill splitting interface
 - Budget management features
 - Integration with backend APIs
-
-supabase: 
-REACT_APP_SUPABASE_URL = https://cotvriuzmnpyipmraoro.supabase.co
-REACT_APP_SUPABASE_ANON_KEY = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNvdHZyaXV6bW5weWlwbXJhb3JvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE4NzgxODcsImV4cCI6MjA3NzQ1NDE4N30.cnTRN1xl7H-3ePTMq2msJbtrGTfWaEOdGom-PpxZk_A
