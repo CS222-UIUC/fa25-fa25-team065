@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { SupabaseAuthService, SupabaseRegisterCredentials } from '../services/supabaseAuthService';
-import { getOrCreateUserByAuth } from '../lib/supabase';
+import { AuthService, RegisterCredentials } from '../services/authService';
 
 const RegisterPage: React.FC = () => {
   const navigate = useNavigate();
@@ -47,22 +46,20 @@ const RegisterPage: React.FC = () => {
     }
 
     try {
-      const credentials: SupabaseRegisterCredentials = {
+      const credentials: RegisterCredentials = {
         username: formData.username,
         email: formData.email,
         password: formData.password
       };
 
-      const user = await SupabaseAuthService.signUp(credentials);
-      if (!user) throw new Error('Unable to create account');
-
-      const appUserId = await getOrCreateUserByAuth(user.id, user.email ?? null);
+      const user = await AuthService.signUp(credentials);
 
       localStorage.setItem('user', JSON.stringify({ 
-        id: user.id,       // auth.users.id
-        email: user.email, // auth email
-        appUserId          // public.users.id
+        id: user.id,
+        email: user.email,
+        username: user.username
       }));
+      
       navigate('/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed. Please try again.');

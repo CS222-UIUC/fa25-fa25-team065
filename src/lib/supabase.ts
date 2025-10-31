@@ -101,23 +101,27 @@ export async function getCurrentSupabaseUser(): Promise<{ id: string; email: str
 }
 
 /** Fetch app user by auth_user_id from your users table. */
-export async function getUserByAuthUserId(authUserId: string): Promise<{ id: string; email: string | null } | null> {
+// Look up app user by email (your users table does not have auth_user_id)
+export async function getUserByEmail(email: string): Promise<{ id: string; email: string | null } | null> {
   const { data, error } = await supabase
     .from('users')
     .select('id, email')
-    .eq('auth_user_id', authUserId)
+    .eq('email', email)
     .maybeSingle();
   if (error) throw error;
   return data ?? null;
 }
 
 /** Ensure a users row exists linked to Supabase Auth (returns users.id). */
-export async function getOrCreateUserByAuth(authUserId: string, email: string | null): Promise<string> {
-  const existing = await getUserByAuthUserId(authUserId);
+export async function getOrCreateUserByAuth(_authUserId: string, email: string | null): Promise<string> {
+  if (!email) throw new Error('Missing email for user linkage');
+
+  const existing = await getUserByEmail(email);
   if (existing?.id) return existing.id;
+
   const { data, error } = await supabase
     .from('users')
-    .insert({ auth_user_id: authUserId, email })
+    .insert({ email })
     .select('id')
     .single();
   if (error) throw error;
