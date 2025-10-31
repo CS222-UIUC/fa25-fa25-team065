@@ -4,6 +4,7 @@ import LandingPage from './components/LandingPage';
 import LoginPage from './components/LoginPage';
 import RegisterPage from './components/RegisterPage';
 import Dashboard from './components/Dashboard';
+import ReceiptUploadUI from './components/ReceiptUploadUI';
 
 function App() {
   return (
@@ -14,6 +15,7 @@ function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/upload" element={<ReceiptUploadUI />} />
         </Routes>
       </div>
     </Router>
