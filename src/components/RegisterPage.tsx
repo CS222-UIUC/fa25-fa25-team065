@@ -19,7 +19,6 @@ const RegisterPage: React.FC = () => {
       ...prev,
       [name]: value
     }));
-    // Clear error when user starts typing
     if (error) setError('');
   };
 
@@ -28,7 +27,6 @@ const RegisterPage: React.FC = () => {
     setIsLoading(true);
     setError('');
 
-    // Basic validation
     if (!formData.username.trim() || !formData.email.trim() || !formData.password.trim()) {
       setError('Please fill in all fields');
       setIsLoading(false);
@@ -55,15 +53,14 @@ const RegisterPage: React.FC = () => {
       };
 
       const user = await AuthService.signUp(credentials);
-      
-      // Store user session
+
       localStorage.setItem('user', JSON.stringify({ 
-        uid: user.uid, 
+        id: user.id,
         email: user.email,
-        displayName: user.displayName 
+        username: user.username
       }));
       
-      navigate('/dashboard'); // Redirect to dashboard
+      navigate('/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed. Please try again.');
     } finally {
@@ -78,7 +75,6 @@ const RegisterPage: React.FC = () => {
   return (
     <div className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
-        {/* Header */}
         <div className="text-center">
           <button 
             onClick={handleBackToHome}
@@ -98,7 +94,6 @@ const RegisterPage: React.FC = () => {
           </p>
         </div>
 
-        {/* Register Form */}
         <div className="bg-white py-8 px-6 shadow-lg rounded-xl border border-secondary-200">
           <form className="space-y-6" onSubmit={handleSubmit}>
             <div>
