@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase/client';
 import { createWorker } from 'tesseract.js';
@@ -42,6 +42,31 @@ export default function ReceiptUploadUI() {
   const [progress, setProgress] = useState(0); // mock only
 
   const [receipt, setReceipt] = useState<LocalReceipt | null>(null);
+  const [recent, setRecent] = useState<Array<{ id: string; merchant_name: string | null; receipt_url: string | null; date_uploaded: string }>>([]);
+  const [recentError, setRecentError] = useState<string>("");
+
+  // Fetch recent uploads for the current user
+  useEffect(() => {
+    const loadRecent = async () => {
+      try {
+        setRecentError("");
+        const rawUser = localStorage.getItem('user');
+        if (!rawUser) return;
+        const user = JSON.parse(rawUser) as { id: string };
+        const { data, error } = await supabase
+          .from('receipts')
+          .select('id, merchant_name, receipt_url, date_uploaded')
+          .eq('user_id', user.id)
+          .order('date_uploaded', { ascending: false })
+          .limit(10);
+        if (error) throw error;
+        setRecent(data || []);
+      } catch (e) {
+        setRecentError(e instanceof Error ? e.message : 'Failed to load recent receipts');
+      }
+    };
+    loadRecent();
+  }, []);
 
   const onPick = (f: File) => {
     if (!ACCEPT.includes(f.type)) {
@@ -453,7 +478,7 @@ export default function ReceiptUploadUI() {
             </div>
           </section>
 
-          {/* Right: Tips / recent mock */}
+          {/* Right: Tips / recent actual list */}
           <aside className="space-y-6">
             <div className="rounded-2xl border border-slate-200 bg-white p-4">
               <h3 className="font-medium text-slate-800">Tips</h3>
@@ -468,28 +493,40 @@ export default function ReceiptUploadUI() {
               <div className="px-4 py-3 border-b border-slate-200">
                 <h3 className="font-medium text-slate-800">Recent uploads</h3>
               </div>
-              <ul className="divide-y divide-slate-200">
-                {["Target_1023.jpg", "Costco_1001.pdf", "Chipotle_0915.png"].map(
-                  (name, i) => (
-                    <li key={name} className="px-4 py-3 text-sm flex items-center gap-3">
-                      <div className="p-2 rounded bg-slate-100">
-                        {name.endsWith(".pdf") ? (
-                          <FileText className="w-4 h-4" />
-                        ) : (
-                          <ImageIcon className="w-4 h-4" />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="truncate text-slate-800">{name}</p>
-                        <p className="text-xs text-slate-500">{i + 1}d ago · 1.2 MB</p>
-                      </div>
-                      <button className="text-xs px-2 py-1 rounded border border-slate-300 hover:bg-slate-50">
-                        View
-                      </button>
-                    </li>
-                  )
-                )}
-              </ul>
+              {recentError ? (
+                <div className="px-4 py-3 text-sm text-red-700">{recentError}</div>
+              ) : recent.length === 0 ? (
+                <div className="px-4 py-3 text-sm text-slate-600">No uploads yet.</div>
+              ) : (
+                <ul className="divide-y divide-slate-200">
+                  {recent.map((r) => {
+                    const nameFromUrl = r.receipt_url ? r.receipt_url.split('/').pop() || 'receipt' : 'receipt';
+                    const isPdf = (nameFromUrl || '').toLowerCase().endsWith('.pdf');
+                    const when = new Date(r.date_uploaded);
+                    return (
+                      <li key={r.id} className="px-4 py-3 text-sm flex items-center gap-3">
+                        <div className="p-2 rounded bg-slate-100">
+                          {isPdf ? (
+                            <FileText className="w-4 h-4" />
+                          ) : (
+                            <ImageIcon className="w-4 h-4" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="truncate text-slate-800">{r.merchant_name || nameFromUrl}</p>
+                          <p className="text-xs text-slate-500">{when.toLocaleString()}</p>
+                        </div>
+                        <button
+                          className="text-xs px-2 py-1 rounded border border-slate-300 hover:bg-slate-50"
+                          onClick={() => navigate(`/receipts/${r.id}/select-items`)}
+                        >
+                          View
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
             </div>
           </aside>
         </div>
