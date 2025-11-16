@@ -6,6 +6,7 @@ import RegisterPage from './components/RegisterPage';
 import Dashboard from './components/Dashboard';
 import ReceiptUploadUI from './components/ReceiptUploadUI';
 import LineItemsSelectPage from './components/LineItemsSelectPage';
+import BudgetDashboard from './components/BudgetDashboard';
 
 function App() {
   return (
@@ -18,6 +19,7 @@ function App() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/upload" element={<ReceiptUploadUI />} />
           <Route path="/receipts/:receiptId/select-items" element={<LineItemsSelectPage />} />
+          <Route path="/budget" element={<BudgetDashboard />} /> {}
         </Routes>
       </div>
     </Router>
