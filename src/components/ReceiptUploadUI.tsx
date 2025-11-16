@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../supabase/client';
+import { supabase } from '../lib/supabase';
 import { createWorker } from 'tesseract.js';
 import Tesseract from 'tesseract.js';
 

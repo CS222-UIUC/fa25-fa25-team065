@@ -48,7 +48,12 @@ function AppContent() {
           console.error('Error handling SIGNED_IN event:', error);
         }
       } else if (event === 'SIGNED_OUT') {
+        // Clear user data from localStorage
         localStorage.removeItem('user');
+        // Navigate to home page if not already there
+        if (window.location.pathname !== '/') {
+          navigate('/');
+        }
       }
     });
 
