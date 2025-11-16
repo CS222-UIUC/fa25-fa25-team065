@@ -1,36 +1,5 @@
-import { 
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword, 
-  signOut, 
-  User,
-  AuthError,
-  updateProfile
-} from 'firebase/auth';
-import { auth } from '../firebase/config';
-
-// Custom error messages for better UX
-const getErrorMessage = (error: AuthError): string => {
-  switch (error.code) {
-    case 'auth/user-not-found':
-      return 'No account found with this email address.';
-    case 'auth/wrong-password':
-      return 'Incorrect password. Please try again.';
-    case 'auth/invalid-email':
-      return 'Invalid email address.';
-    case 'auth/user-disabled':
-      return 'This account has been disabled.';
-    case 'auth/too-many-requests':
-      return 'Too many failed attempts. Please try again later.';
-    case 'auth/email-already-in-use':
-      return 'An account with this email already exists.';
-    case 'auth/weak-password':
-      return 'Password should be at least 6 characters.';
-    case 'auth/network-request-failed':
-      return 'Network error. Please check your connection.';
-    default:
-      return 'An error occurred. Please try again.';
-  }
-};
+import bcrypt from 'bcryptjs';
+import { supabase } from '../supabase/client';
 
 export interface LoginCredentials {
   email: string;
@@ -41,65 +10,141 @@ export interface RegisterCredentials extends LoginCredentials {
   username: string;
 }
 
+export interface LocalUser {
+  id: string;
+  email: string;
+  username: string;
+}
+
+const getErrorMessage = (code: string): string => {
+  switch (code) {
+    case 'user-not-found':
+      return 'No account found with this email address.';
+    case 'wrong-password':
+      return 'Incorrect password. Please try again.';
+    case 'invalid-email':
+      return 'Invalid email address.';
+    case 'email-already-in-use':
+      return 'An account with this email already exists.';
+    default:
+      return 'An error occurred. Please try again.';
+  }
+};
+
 export class AuthService {
-  // Sign in with email and password
-  static async signIn(credentials: LoginCredentials): Promise<User> {
+  static async signIn(credentials: LoginCredentials): Promise<LocalUser> {
     try {
-      console.log('Attempting to sign in with:', credentials.email);
-      const userCredential = await signInWithEmailAndPassword(
-        auth, 
-        credentials.email, 
-        credentials.password
+      // eslint-disable-next-line no-console
+      console.log('[AuthService.signIn] querying users by email');
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, email, username, password_hash')
+        .eq('email', credentials.email)
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        // eslint-disable-next-line no-console
+        console.error('[AuthService.signIn] supabase select error', error);
+        throw new Error(error.message || getErrorMessage('unknown'));
+      }
+      if (!data) throw new Error(getErrorMessage('user-not-found'));
+
+      const passwordMatches = await bcrypt.compare(
+        credentials.password,
+        data.password_hash as string
       );
-      console.log('Sign in successful:', userCredential.user.uid);
-      return userCredential.user;
-    } catch (error) {
-      console.error('Sign in error:', error);
-      throw new Error(getErrorMessage(error as AuthError));
+
+      if (!passwordMatches) {
+        throw new Error(getErrorMessage('wrong-password'));
+      }
+
+      const user: LocalUser = { id: data.id, email: data.email, username: data.username };
+      return user;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : getErrorMessage('unknown');
+      throw new Error(msg);
     }
   }
 
-  // Create new user account
-  static async signUp(credentials: RegisterCredentials): Promise<User> {
+  static async signUp(credentials: RegisterCredentials): Promise<LocalUser> {
     try {
-      console.log('Attempting to create account for:', credentials.email);
-      const userCredential = await createUserWithEmailAndPassword(
-        auth,
-        credentials.email,
-        credentials.password
-      );
-      
-      console.log('Account created successfully:', userCredential.user.uid);
-      
-      // Update the user's display name
-      await updateProfile(userCredential.user, {
-        displayName: credentials.username
-      });
-      
-      console.log('Profile updated with username:', credentials.username);
-      return userCredential.user;
-    } catch (error) {
-      console.error('Sign up error:', error);
-      throw new Error(getErrorMessage(error as AuthError));
+      // Check duplicates (email)
+      const { data: existingEmail, error: emailErr } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', credentials.email)
+        .limit(1)
+        .maybeSingle();
+      if (emailErr) {
+        // eslint-disable-next-line no-console
+        console.error('[AuthService.signUp] email check error', emailErr);
+        throw new Error(emailErr.message || getErrorMessage('unknown'));
+      }
+      if (existingEmail) {
+        throw new Error(getErrorMessage('email-already-in-use'));
+      }
+
+      // Check duplicates (username)
+      const { data: existingUsername, error: usernameErr } = await supabase
+        .from('users')
+        .select('id')
+        .eq('username', credentials.username)
+        .limit(1)
+        .maybeSingle();
+      if (usernameErr) {
+        // eslint-disable-next-line no-console
+        console.error('[AuthService.signUp] username check error', usernameErr);
+        throw new Error(usernameErr.message || getErrorMessage('unknown'));
+      }
+      if (existingUsername) {
+        throw new Error('Username is already taken.');
+      }
+
+      const passwordHash = await bcrypt.hash(credentials.password, 10);
+
+      // Insert user
+      // eslint-disable-next-line no-console
+      console.log('[AuthService.signUp] inserting user row');
+      const { data, error } = await supabase
+        .from('users')
+        .insert({
+          email: credentials.email,
+          username: credentials.username,
+          password_hash: passwordHash,
+        })
+        .select('id, email, username')
+        .single();
+
+      if (error) {
+        // eslint-disable-next-line no-console
+        console.error('[AuthService.signUp] supabase insert error', error);
+        throw new Error(error.message || getErrorMessage('unknown'));
+      }
+
+      const user: LocalUser = { id: data.id, email: data.email, username: data.username };
+      return user;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : getErrorMessage('unknown');
+      throw new Error(msg);
     }
   }
 
-  // Sign out current user
   static async signOut(): Promise<void> {
+    return;
+  }
+
+  static getCurrentUser(): LocalUser | null {
+    const raw = localStorage.getItem('user');
+    if (!raw) return null;
     try {
-      await signOut(auth);
-    } catch (error) {
-      throw new Error('Failed to sign out. Please try again.');
+      return JSON.parse(raw) as LocalUser;
+    } catch {
+      return null;
     }
   }
 
-  // Get current user
-  static getCurrentUser(): User | null {
-    return auth.currentUser;
-  }
-
-  // Check if user is authenticated
   static isAuthenticated(): boolean {
-    return !!auth.currentUser;
+    return !!AuthService.getCurrentUser();
   }
 }
