@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase/client';
 import { createWorker } from 'tesseract.js';
+import Tesseract from 'tesseract.js';
 
 // ============================================================================
 // ICONS
@@ -76,8 +77,7 @@ const formatBytes = (bytes: number): string => {
   return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
 };
 
-// OCR Function
-// OCR Function
+// OCR Function with image preprocessing
 async function extractTextFromFile(file: File, onProgress?: (progress: number) => void): Promise<string> {
   const worker = await createWorker('eng', 1, {
     logger: m => {
@@ -86,40 +86,70 @@ async function extractTextFromFile(file: File, onProgress?: (progress: number) =
       }
     }
   });
+
+  // Configure Tesseract for better receipt recognition
+  await worker.setParameters({
+    tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz$.,- ',
+    tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK, // Assume uniform block of text
+  });
   
   const { data } = await worker.recognize(file);
   await worker.terminate();
+  
+  console.log('OCR Raw Text:', data.text); // Debug: see what OCR actually extracted
   return data.text || '';
 }
 
-// Parse OCR text into items
+// Parse OCR text into items - more flexible parsing
 function parseOcrText(text: string): ReceiptItem[] {
   const items: ReceiptItem[] = [];
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   
-  const pricePattern = /\$?\s*(\d+[\.,]\d{2})\b/;
-  const skipWords = ['total', 'subtotal', 'tax', 'thank you', 'receipt', 'payment', 'change', 'cash', 'credit', 'debit'];
+  console.log('Parsing lines:', lines); // Debug log
+  
+  const skipWords = ['total', 'subtotal', 'tax', 'thank', 'receipt', 'payment', 'change', 'cash', 'credit', 'debit', 'visa', 'mastercard', 'amex'];
   
   for (const line of lines) {
     const lowerLine = line.toLowerCase();
+    
+    // Skip lines with common non-item words
     if (skipWords.some(word => lowerLine.includes(word))) continue;
     
-    const match = line.match(/(.*?)[\s\-:]*\$?\s*(\d+[\.,]\d{2})\s*$/);
-    if (match) {
-      const name = match[1].trim().replace(/^\d+\s*x?\s*/i, '');
-      const price = parseFloat(match[2].replace(',', '.'));
+    // Look for various price patterns
+    // Matches: $12.99, 12.99, $12, 12.00, etc.
+    const priceMatches = line.match(/\$?\s*(\d+)[.,](\d{2})/g);
+    
+    if (priceMatches && priceMatches.length > 0) {
+      // Get the last price (usually the item price)
+      const lastPrice = priceMatches[priceMatches.length - 1];
+      const priceStr = lastPrice.replace(/\$|\s/g, '').replace(',', '.');
+      const price = parseFloat(priceStr);
       
-      if (name && name.length > 2 && price > 0 && price < 1000) {
-        items.push({
-          id: crypto.randomUUID(),
-          name: name,
-          price: price,
-          assignedTo: ["1"]
-        });
+      if (price > 0 && price < 1000) {
+        // Extract item name (everything before the last price)
+        const priceIndex = line.lastIndexOf(lastPrice);
+        let itemName = line.substring(0, priceIndex).trim();
+        
+        // Clean up item name
+        itemName = itemName
+          .replace(/^\d+\s*x?\s*/i, '') // Remove quantity prefix
+          .replace(/[@#*]+/g, '') // Remove special chars
+          .trim();
+        
+        if (itemName.length >= 2) {
+          console.log('Found item:', itemName, price); // Debug log
+          items.push({
+            id: crypto.randomUUID(),
+            name: itemName,
+            price: price,
+            assignedTo: ["1"]
+          });
+        }
       }
     }
   }
   
+  console.log('Parsed items:', items); // Debug log
   return items;
 }
 
@@ -197,8 +227,27 @@ export default function ReceiptUploadUI() {
     setError("");
 
     try {
+      console.log('Starting OCR on file:', file.name, file.type);
       const extractedText = await extractTextFromFile(file, setOcrProgress);
+    
+      console.log('Extracted text length:', extractedText.length);
+    
+      if (!extractedText || extractedText.trim().length < 10) {
+        setError('Could not extract text from image. Try a clearer photo or add items manually.');
+        setReceipt(prev => prev ? {
+          ...prev,
+          extractedText: extractedText,
+          items: [{ id: crypto.randomUUID(), name: "New Item", price: 0, assignedTo: ["1"] }]
+        } : null);
+        setIsProcessing(false);
+        return;
+      }
+    
       const parsedItems = parseOcrText(extractedText);
+
+      if (parsedItems.length === 0) {
+        setError('No items found. The image may be unclear - add items manually below.');
+      }
 
       setReceipt(prev => prev ? {
         ...prev,
@@ -208,7 +257,7 @@ export default function ReceiptUploadUI() {
 
     } catch (err) {
       console.error('OCR Error:', err);
-      setError('Failed to extract text. You can still add items manually.');
+      setError('Failed to extract text. You can add items manually.');
       setReceipt(prev => prev ? {
         ...prev,
         items: [{ id: crypto.randomUUID(), name: "New Item", price: 0, assignedTo: ["1"] }]
