@@ -7,6 +7,8 @@ import Dashboard from './components/Dashboard';
 import ReceiptUploadUI from './components/ReceiptUploadUI';
 import LineItemsSelectPage from './components/LineItemsSelectPage';
 import BudgetDashboard from './components/BudgetDashboard';
+import GroupsPage from './components/GroupsPage';
+
 
 function App() {
   return (
@@ -20,6 +22,8 @@ function App() {
           <Route path="/upload" element={<ReceiptUploadUI />} />
           <Route path="/receipts/:receiptId/select-items" element={<LineItemsSelectPage />} />
           <Route path="/budget" element={<BudgetDashboard />} /> {}
+          <Route path="/groups" element={<GroupsPage />} />
+
         </Routes>
       </div>
     </Router>
