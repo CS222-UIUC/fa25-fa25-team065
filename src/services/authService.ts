@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs';
-import { supabase } from '../supabase/client';
+import { supabase } from '../lib/supabase';
 
 export interface LoginCredentials {
   email: string;

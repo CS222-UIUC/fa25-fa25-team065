@@ -1,17 +1,30 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { SupabaseAuthService } from '../services/supabaseAuthService';
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   const handleSignOut = async () => {
+    setIsSigningOut(true);
     try {
+      // Sign out from Supabase Auth (works for both email/password and OAuth)
       await SupabaseAuthService.signOut();
+      
+      // Clear localStorage (the auth state listener in App.tsx will also handle this,
+      // but we do it here as well to ensure immediate cleanup)
       localStorage.removeItem('user');
+      
+      // Navigate to home page
       navigate('/');
     } catch (error) {
       console.error('Sign out error:', error);
+      // Even if there's an error, clear local state and redirect
+      localStorage.removeItem('user');
+      navigate('/');
+    } finally {
+      setIsSigningOut(false);
     }
   };
 
@@ -31,9 +44,10 @@ const Dashboard: React.FC = () => {
               <span className="text-secondary-600">Welcome, {user.username || user.email}!</span>
               <button 
                 onClick={handleSignOut}
-                className="btn-secondary"
+                disabled={isSigningOut}
+                className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Sign Out
+                {isSigningOut ? 'Signing out...' : 'Sign Out'}
               </button>
             </div>
           </div>

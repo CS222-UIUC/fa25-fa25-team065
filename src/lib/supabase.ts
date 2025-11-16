@@ -112,16 +112,59 @@ export async function getUserByEmail(email: string): Promise<{ id: string; email
   return data ?? null;
 }
 
-/** Ensure a users row exists linked to Supabase Auth (returns users.id). */
+/** 
+ * Ensure a users row exists linked to Supabase Auth (returns users.id).
+ * For Google OAuth users:
+ * - If email doesn't exist: Creates new row with email, username (Gmail tag), password_hash=NULL, method=NULL
+ * - If email exists: Returns existing user ID (preserves existing data)
+ */
 export async function getOrCreateUserByAuth(_authUserId: string, email: string | null): Promise<string> {
   if (!email) throw new Error('Missing email for user linkage');
 
   const existing = await getUserByEmail(email);
-  if (existing?.id) return existing.id;
+  if (existing?.id) {
+    // Case 2: Email collision - return existing user ID without updating
+    return existing.id;
+  }
+
+  // Case 1: First-time Google login - create new user
+  // Extract Gmail tag (part before @) for username
+  const emailParts = email.split('@');
+  let baseUsername = emailParts[0] || 'user'; // Fallback to 'user' if no tag found
+  
+  // Handle potential username conflicts (UNIQUE constraint)
+  // Try to find a unique username by appending a random suffix if needed
+  let username = baseUsername;
+  let attempts = 0;
+  const maxAttempts = 10;
+  
+  while (attempts < maxAttempts) {
+    // Check if username already exists
+    const { data: existingUsername } = await supabase
+      .from('users')
+      .select('id')
+      .eq('username', username)
+      .maybeSingle();
+    
+    if (!existingUsername) {
+      // Username is available, break out of loop
+      break;
+    }
+    
+    // Username exists, append a random suffix
+    const randomSuffix = Math.floor(Math.random() * 10000);
+    username = `${baseUsername}${randomSuffix}`;
+    attempts++;
+  }
 
   const { data, error } = await supabase
     .from('users')
-    .insert({ email })
+    .insert({ 
+      email,
+      username: username,
+      password_hash: null,
+      method: null
+    })
     .select('id')
     .single();
   if (error) throw error;
