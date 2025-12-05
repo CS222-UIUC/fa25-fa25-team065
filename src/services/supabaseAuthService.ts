@@ -29,8 +29,18 @@ export class SupabaseAuthService {
   }
 
   static async signOut() {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
+    console.log('🔴 [SupabaseAuthService] signOut() called');
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error('❌ [SupabaseAuthService] signOut() error:', error);
+        throw error;
+      }
+      console.log('🔴 [SupabaseAuthService] signOut() completed successfully');
+    } catch (error) {
+      console.error('❌ [SupabaseAuthService] signOut() exception:', error);
+      throw error;
+    }
   }
 
   static async getCurrentUser() {

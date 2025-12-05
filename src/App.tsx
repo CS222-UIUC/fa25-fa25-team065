@@ -2,62 +2,87 @@ import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-router-dom';
 import { supabase } from './lib/supabase';
 import { getOrCreateUserByAuth } from './lib/supabase';
-import LandingPage from './components/LandingPage';
-import LoginPage from './components/LoginPage';
-import RegisterPage from './components/RegisterPage';
-import Dashboard from './components/Dashboard';
-import ReceiptUploadUI from './components/ReceiptUploadUI';
-import LineItemsSelectPage from './components/LineItemsSelectPage';
-import ThankYouPage from './components/ThankYouPage';
+import LandingPage from './components/1_LandingPage';
+import LoginPage from './components/2_LoginPage';
+import RegisterPage from './components/7_RegisterPage';
+import Dashboard from './components/3_Dashboard';
+import ReceiptUploadUI from './components/4_ReceiptUploadUI';
+import LineItemsSelectPage from './components/5_LineItemsSelectPage';
+import ThankYouPage from './components/6_ThankYouPage';
 
 function AppContent() {
   const navigate = useNavigate();
 
   useEffect(() => {
+    console.log('🔵 [App] Setting up auth state listener...');
     // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('🔵 [App] Auth state change event:', event, 'Session:', session ? 'exists' : 'null');
+      
       if (event === 'SIGNED_IN' && session?.user) {
+        console.log('🔵 [App] SIGNED_IN event detected');
         try {
           const email = session.user.email ?? null;
-          const userId = await getOrCreateUserByAuth(session.user.id, email);
+          // Extract name from Google OAuth user metadata
+          // Google provides name in user_metadata.full_name or user_metadata.name
+          const name = session.user.user_metadata?.full_name || 
+                      session.user.user_metadata?.name || 
+                      null;
+          console.log('🔵 [App] Extracted email:', email, 'name:', name);
+          
+          const userId = await getOrCreateUserByAuth(session.user.id, email, name);
+          console.log('🔵 [App] User ID:', userId);
           
           // Fetch user data from users table
           const { data: userData, error } = await supabase
             .from('users')
-            .select('id, email, username')
+            .select('id, email, username, name')
             .eq('id', userId)
             .single();
 
           if (error) {
-            console.error('Error fetching user data:', error);
+            console.error('❌ [App] Error fetching user data:', error);
             return;
           }
 
           // Store user data in localStorage
           if (userData) {
+            console.log('🔵 [App] Storing user data in localStorage:', userData);
             localStorage.setItem('user', JSON.stringify({
               id: userData.id,
               email: userData.email,
-              username: userData.username
+              username: userData.username,
+              name: userData.name
             }));
           }
 
           // Redirect to dashboard
+          console.log('🔵 [App] Navigating to dashboard...');
           navigate('/dashboard');
         } catch (error) {
-          console.error('Error handling SIGNED_IN event:', error);
+          console.error('❌ [App] Error handling SIGNED_IN event:', error);
         }
       } else if (event === 'SIGNED_OUT') {
+        console.log('🔴 [App] SIGNED_OUT event detected');
         // Clear user data from localStorage
+        console.log('🔴 [App] Clearing localStorage...');
         localStorage.removeItem('user');
+        console.log('🔴 [App] localStorage cleared');
         // Navigate to home page if not already there
-        if (window.location.pathname !== '/') {
-          navigate('/');
+        const currentPath = window.location.pathname;
+        console.log('🔴 [App] Current path:', currentPath);
+        if (currentPath !== '/') {
+          console.log('🔴 [App] Navigating to landing page...');
+          navigate('/', { replace: true });
+          console.log('🔴 [App] Navigation called');
+        } else {
+          console.log('🔴 [App] Already on landing page, no navigation needed');
         }
       }
     });
 
     return () => {
+      console.log('🔵 [App] Cleaning up auth state listener');
       subscription.unsubscribe();
     };
   }, [navigate]);

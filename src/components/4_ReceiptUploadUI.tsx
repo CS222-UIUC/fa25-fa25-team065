@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { createWorker } from 'tesseract.js';
@@ -190,6 +190,9 @@ export default function ReceiptUploadUI() {
   const [editingItem, setEditingItem] = useState<string | null>(null);
   const [recent, setRecent] = useState<Array<{ id: string; merchant_name: string | null; receipt_url: string | null; date_uploaded: string }>>([]);
   const [recentError, setRecentError] = useState<string>("");
+  const [searchResults, setSearchResults] = useState<Array<{ id: string; username: string | null; email: string; name: string | null }>>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Fetch recent uploads
   useEffect(() => {
@@ -364,6 +367,105 @@ export default function ReceiptUploadUI() {
       });
     }
   };
+
+  // ============================================================================
+  // USER SEARCH / AUTOCOMPLETE
+  // ============================================================================
+  // Search users by name as they type
+  const searchUsers = useCallback(async (query: string) => {
+    console.log('🔵 [Search] searchUsers called with query:', query);
+    
+    if (!query.trim() || query.length < 2) {
+      console.log('🔵 [Search] Query too short, clearing results');
+      setSearchResults([]);
+      setShowDropdown(false);
+      return;
+    }
+
+    try {
+      const searchTerm = query.trim();
+      console.log('🔵 [Search] Sending search request for term:', searchTerm);
+      
+      // Search by name (case-insensitive) - name is the primary search field
+      // Also search username and email as fallback
+      const { data: usersData, error: usersError } = await supabase
+        .from('users')
+        .select('id, username, email, name')
+        .or(`name.ilike.%${searchTerm}%,username.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%`)
+        .limit(10);
+
+      console.log('🔵 [Search] Search request returned');
+      console.log('🔵 [Search] Response data:', usersData);
+      console.log('🔵 [Search] Number of users found:', usersData?.length || 0);
+
+      if (usersError) {
+        console.error('❌ [Search] Error searching users:', usersError);
+        setSearchResults([]);
+        setShowDropdown(false);
+        return;
+      }
+
+      // Filter out users who are already in the people list
+      const filteredUsers = (usersData || []).filter(
+        user => !people.some(p => p.id === user.id)
+      );
+
+      console.log('🔵 [Search] After filtering existing people:', filteredUsers.length, 'users');
+      console.log('🔵 [Search] Filtered users:', filteredUsers.map(u => ({ name: u.name, username: u.username, email: u.email })));
+
+      setSearchResults(filteredUsers);
+      setShowDropdown(filteredUsers.length > 0);
+      console.log('🔵 [Search] Search completed. Dropdown will show:', filteredUsers.length > 0);
+    } catch (e) {
+      console.error('❌ [Search] Error in searchUsers:', e);
+      setSearchResults([]);
+      setShowDropdown(false);
+    }
+  }, [people]);
+
+  // Handle input change with debounced search
+  const handleInputChange = (value: string) => {
+    console.log('🔵 [Input] handleInputChange called with value:', value);
+    setNewPersonName(value);
+    setError('');
+
+    // Clear existing timeout
+    if (searchTimeoutRef.current) {
+      console.log('🔵 [Input] Clearing previous timeout');
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    // Debounce search
+    console.log('🔵 [Input] Setting timeout for search (300ms delay)');
+    searchTimeoutRef.current = setTimeout(() => {
+      console.log('🔵 [Input] Timeout fired, calling searchUsers');
+      searchUsers(value);
+    }, 300);
+  };
+
+  // Handle selecting a user from dropdown
+  const handleSelectUser = (user: { id: string; username: string | null; email: string; name: string | null }) => {
+    console.log('🔵 [Select] User selected:', user);
+    const newPerson: Person = {
+      id: user.id,
+      name: user.name || user.username || user.email || 'Unknown',
+      color: DEFAULT_COLORS[people.length % DEFAULT_COLORS.length]
+    };
+    setPeople([...people, newPerson]);
+    setNewPersonName('');
+    setShowDropdown(false);
+    setSearchResults([]);
+    console.log('🔵 [Select] Person added:', newPerson);
+  };
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // ============================================================================
   // ITEM MANAGEMENT
@@ -567,9 +669,10 @@ export default function ReceiptUploadUI() {
       setUploadProgress(100);
       setIsProcessing(false);
       console.log('=== Save process completed successfully ===');
+      console.log('=== Navigating to LineItemsSelectPage with receipt ID:', insertedReceipt.id);
       
-      // Navigate to thank you page
-      navigate('/thank-you');
+      // Navigate to line items selection page to assign items to people
+      navigate(`/receipts/${insertedReceipt.id}/select-items`);
     } catch (e) {
       console.error('=== Error in handleSaveAndShare ===', e);
       setIsProcessing(false);
@@ -815,11 +918,11 @@ export default function ReceiptUploadUI() {
               {/* Right: People and totals */}
               <div className="space-y-4">
                 {/* People section */}
-                <div className="bg-white rounded-xl border border-slate-200">
+                <div className="bg-white rounded-xl border border-slate-200 overflow-visible">
                   <div className="px-4 py-3 border-b border-slate-200">
                     <h3 className="font-medium text-slate-800">People</h3>
                   </div>
-                  <div className="p-4 space-y-3">
+                  <div className="p-4 space-y-3 overflow-visible">
                     {people.map(person => (
                       <div key={person.id} className="flex items-center justify-between">
                         <span className={`px-3 py-1.5 rounded-full text-sm font-medium ${person.color}`}>
@@ -836,15 +939,62 @@ export default function ReceiptUploadUI() {
                       </div>
                     ))}
 
-                    <div className="flex gap-2 pt-2 border-t border-slate-200">
-                      <input
-                        type="text"
-                        value={newPersonName}
-                        onChange={(e) => setNewPersonName(e.target.value)}
-                        onKeyPress={(e) => e.key === 'Enter' && addPerson()}
-                        placeholder="Add person..."
-                        className="flex-1 px-3 py-1.5 text-sm border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
+                    <div className="flex gap-2 pt-2 border-t border-slate-200 relative">
+                      <div className="flex-1 relative z-10">
+                        <input
+                          type="text"
+                          value={newPersonName}
+                          onChange={(e) => {
+                            console.log('🔴🔴🔴 INPUT CHANGED! Value:', e.target.value);
+                            handleInputChange(e.target.value);
+                          }}
+                          onClick={() => console.log('🔴🔴🔴 INPUT CLICKED!')}
+                          onKeyPress={(e) => e.key === 'Enter' && addPerson()}
+                          onFocus={() => {
+                            console.log('🔵 [Input] Input focused. searchResults.length:', searchResults.length);
+                            if (searchResults.length > 0) {
+                              console.log('🔵 [Input] Showing dropdown because results exist');
+                              setShowDropdown(true);
+                            }
+                          }}
+                          onBlur={() => {
+                            console.log('🔵 [Input] Input blurred');
+                            setTimeout(() => {
+                              console.log('🔵 [Input] Hiding dropdown after blur delay');
+                              setShowDropdown(false);
+                            }, 200);
+                          }}
+                          placeholder="Search by name..."
+                          className="w-full px-3 py-1.5 text-sm border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        {/* Dropdown with search results */}
+                        {showDropdown && searchResults.length > 0 && (
+                          <div className="absolute z-[100] w-full mt-1 bg-white border border-slate-300 rounded-md shadow-xl max-h-60 overflow-auto">
+                            {searchResults.map((user) => (
+                              <button
+                                key={user.id}
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  handleSelectUser(user);
+                                }}
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 focus:bg-blue-50 focus:outline-none border-b border-slate-100 last:border-b-0"
+                              >
+                                <div className="font-medium text-slate-800">
+                                  {user.name || user.username || user.email || 'Unknown user'}
+                                </div>
+                                {(user.email || user.username) && (
+                                  <div className="text-xs text-slate-500">
+                                    {user.email}
+                                    {user.username && user.email && ' • '}
+                                    {user.username && !user.name && user.username}
+                                  </div>
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                       <button
                         onClick={addPerson}
                         disabled={!newPersonName.trim()}
