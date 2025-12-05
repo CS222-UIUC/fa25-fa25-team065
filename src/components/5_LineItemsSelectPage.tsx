@@ -507,6 +507,100 @@ const LineItemsSelectPage: React.FC = () => {
         if (insertError) throw insertError;
       }
 
+      // Calculate and save splits
+      console.log('🔵 [Splits] Starting split calculation...');
+      
+      // Get the receipt to find the payer (who uploaded the receipt)
+      const { data: receiptData, error: receiptError } = await supabase
+        .from('receipts')
+        .select('id, user_id')
+        .eq('id', receiptId)
+        .single();
+
+      if (receiptError || !receiptData) {
+        console.error('❌ [Splits] Failed to get receipt:', receiptError);
+        throw receiptError || new Error('Failed to get receipt data');
+      }
+
+      const payerId = receiptData.user_id;
+      console.log('🔵 [Splits] Payer ID (who uploaded receipt):', payerId);
+
+      // Calculate splits: For each item, split cost among assigned participants
+      // Track what each participant owes
+      const participantOwedAmounts: Record<string, number> = {}; // user_id -> total amount owed
+
+      items.forEach(item => {
+        const itemPrice = item.total_price || 0;
+        if (itemPrice <= 0) return;
+
+        // Get assigned participants for this item
+        const assignedParticipantIds = assignments[item.id] || new Set();
+        if (assignedParticipantIds.size === 0) return;
+
+        // Calculate split amount per person
+        const splitAmount = itemPrice / assignedParticipantIds.size;
+        console.log(`🔵 [Splits] Item "${item.item_name}": $${itemPrice.toFixed(2)} split among ${assignedParticipantIds.size} people = $${splitAmount.toFixed(2)} each`);
+
+        // Add to each participant's total owed
+        assignedParticipantIds.forEach(participantId => {
+          const participant = participants.find(p => p.id === participantId);
+          if (participant && participant.user_id !== payerId) {
+            // Only track what non-payers owe (payer doesn't owe themselves)
+            participantOwedAmounts[participant.user_id] = 
+              (participantOwedAmounts[participant.user_id] || 0) + splitAmount;
+          }
+        });
+      });
+
+      console.log('🔵 [Splits] Participant owed amounts:', participantOwedAmounts);
+
+      // Delete existing splits for this receipt (to allow re-saving)
+      const { error: deleteSplitsError } = await supabase
+        .from('splits')
+        .delete()
+        .eq('receipt_id', receiptId);
+
+      if (deleteSplitsError) {
+        console.error('❌ [Splits] Failed to delete existing splits:', deleteSplitsError);
+        // Don't throw - continue to create new splits
+      }
+
+      // Create splits records: one per participant who owes money
+      const splitsToInsert: Array<{
+        receipt_id: string;
+        payer_id: string;
+        participant_id: string;
+        amount_owed: number;
+        split_type: string;
+      }> = [];
+
+      Object.entries(participantOwedAmounts).forEach(([participantUserId, amount]) => {
+        if (amount > 0) {
+          splitsToInsert.push({
+            receipt_id: receiptId,
+            payer_id: payerId,
+            participant_id: participantUserId,
+            amount_owed: Math.round(amount * 100) / 100, // Round to 2 decimal places
+            split_type: 'item_based',
+          });
+        }
+      });
+
+      if (splitsToInsert.length > 0) {
+        console.log('🔵 [Splits] Inserting splits:', splitsToInsert);
+        const { error: splitsError } = await supabase
+          .from('splits')
+          .insert(splitsToInsert);
+
+        if (splitsError) {
+          console.error('❌ [Splits] Failed to insert splits:', splitsError);
+          throw splitsError;
+        }
+        console.log('✅ [Splits] Successfully saved', splitsToInsert.length, 'split records');
+      } else {
+        console.log('🔵 [Splits] No splits to save (all items assigned to payer only)');
+      }
+
       // Navigate back or show success
       navigate('/dashboard');
     } catch (e) {
