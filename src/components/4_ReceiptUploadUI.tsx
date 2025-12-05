@@ -16,6 +16,7 @@ const Loader2 = (p: any) => <Icon className={`animate-spin ${p.className || ''}`
 const Pencil = (p: any) => <Icon {...p}><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" stroke="currentColor" strokeWidth="2" fill="none" /></Icon>;
 const Trash = (p: any) => <Icon {...p}><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14z" stroke="currentColor" strokeWidth="2" fill="none" /></Icon>;
 const Plus = (p: any) => <Icon {...p}><path d="M12 5v14m-7-7h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></Icon>;
+const Search = (p: any) => <Icon {...p}><circle cx="11" cy="11" r="8" stroke="currentColor" strokeWidth="2" fill="none" /><path d="m21 21-4.35-4.35" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></Icon>;
 
 // ============================================================================
 // TYPES
@@ -194,6 +195,7 @@ export default function ReceiptUploadUI() {
   const [showDropdown, setShowDropdown] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isMountedRef = useRef(true);
 
   // Fetch recent uploads
   useEffect(() => {
@@ -216,6 +218,19 @@ export default function ReceiptUploadUI() {
       }
     };
     loadRecent();
+  }, []);
+
+  // Cleanup on unmount to prevent stale state updates
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      // Clear any pending timeouts
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+        searchTimeoutRef.current = null;
+      }
+    };
   }, []);
 
   // Calculate splits and total
@@ -387,9 +402,15 @@ export default function ReceiptUploadUI() {
     
     if (!query.trim() || query.length < 2) {
       console.log('🔵 [Search] Query too short, clearing results');
+      if (!isMountedRef.current) return;
       setSearchResults([]);
       setShowDropdown(false);
       setIsSearching(false);
+      return;
+    }
+
+    if (!isMountedRef.current) {
+      console.log('🔵 [Search] Component unmounted, skipping search');
       return;
     }
 
@@ -399,11 +420,11 @@ export default function ReceiptUploadUI() {
     const queryStartTime = performance.now();
     
     try {
-      // Search by name first (primary search field) - simpler and faster
+      // Search by name, username, or email using OR condition
       const { data: usersData, error: usersError } = await supabase
         .from('users')
         .select('id, username, email, name')
-        .ilike('name', `%${searchTerm}%`)
+        .or(`name.ilike.%${searchTerm}%,username.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%`)
         .limit(10);
 
       const queryEndTime = performance.now();
@@ -411,10 +432,19 @@ export default function ReceiptUploadUI() {
       console.log(`⏱️ [Search] Query took ${queryDuration.toFixed(2)}ms`);
       console.log('🔵 [Search] Search request returned');
       console.log('🔵 [Search] Response data:', usersData);
+      console.log('🔵 [Search] Response error:', usersError);
       console.log('🔵 [Search] Number of users found:', usersData?.length || 0);
+
+      // Check if component is still mounted before updating state
+      if (!isMountedRef.current) {
+        console.log('🔵 [Search] Component unmounted during search, skipping state update');
+        return;
+      }
 
       if (usersError) {
         console.error('❌ [Search] Error searching users:', usersError);
+        if (!isMountedRef.current) return;
+        setError(`Search failed: ${usersError.message || 'Unable to search users'}`);
         setSearchResults([]);
         setShowDropdown(false);
         setIsSearching(false);
@@ -422,15 +452,27 @@ export default function ReceiptUploadUI() {
       }
 
       // Filter out users who are already in the people list
-      const filteredUsers = usersData.filter(
-        user => !people.some(p => p.id === user.id)
+      const filteredUsers = (usersData || []).filter(
+        (user: { id: string; username: string | null; email: string; name: string | null }) => !people.some(p => p.id === user.id)
       );
 
       console.log('🔵 [Search] After filtering existing people:', filteredUsers.length, 'users');
-      console.log('🔵 [Search] Filtered users:', filteredUsers.map(u => ({ name: u.name, username: u.username, email: u.email })));
+      console.log('🔵 [Search] Filtered users:', filteredUsers.map((u: { id: string; username: string | null; email: string; name: string | null }) => ({ name: u.name, username: u.username, email: u.email })));
+
+      // Final mount check before updating state
+      if (!isMountedRef.current) {
+        console.log('🔵 [Search] Component unmounted before state update');
+        return;
+      }
 
       setSearchResults(filteredUsers);
-      setShowDropdown(filteredUsers.length > 0);
+      // Always show dropdown if there are results, even if it was closed by blur
+      if (filteredUsers.length > 0) {
+        setShowDropdown(true);
+        console.log('🔵 [Search] Showing dropdown with', filteredUsers.length, 'results');
+      } else {
+        setShowDropdown(false);
+      }
       setIsSearching(false);
       
       const endTime = performance.now();
@@ -440,43 +482,43 @@ export default function ReceiptUploadUI() {
     } catch (e) {
       const endTime = performance.now();
       const totalDuration = endTime - startTime;
+      
       console.error('❌ [Search] Exception in searchUsers:', e);
       console.log(`⏱️ [Search] Failed after ${totalDuration.toFixed(2)}ms`);
+      
+      if (!isMountedRef.current) {
+        console.log('🔵 [Search] Component unmounted, skipping error state update');
+        return;
+      }
+      
+      setError(`Search error: ${e instanceof Error ? e.message : 'Unable to complete search'}`);
       setSearchResults([]);
       setShowDropdown(false);
       setIsSearching(false);
     }
   }, [people]);
 
-  // Handle input change with debounced search
+  // Handle input change (no auto-search, only on button click or Enter)
   const handleInputChange = (value: string) => {
     console.log('🔵 [Input] handleInputChange called with value:', value);
     setNewPersonName(value);
     setError('');
+    // Clear search results when typing (don't auto-search)
+    setSearchResults([]);
+    setShowDropdown(false);
+  };
 
-    // Clear existing timeout
-    if (searchTimeoutRef.current) {
-      console.log('🔵 [Input] Clearing previous timeout');
-      clearTimeout(searchTimeoutRef.current);
-      searchTimeoutRef.current = null;
-    }
-
-    // If input is cleared, reset search state
-    if (!value.trim()) {
-      console.log('🔵 [Input] Input cleared, resetting search state');
-      setSearchResults([]);
-      setShowDropdown(false);
-      setIsSearching(false);
+  // Handle search button click or Enter key
+  const handleSearch = async () => {
+    const searchValue = newPersonName.trim();
+    if (searchValue.length < 2) {
+      setError('Please enter at least 2 characters to search');
       return;
     }
-
-    // Debounce search
-    console.log('🔵 [Input] Setting timeout for search (300ms delay)');
-    searchTimeoutRef.current = setTimeout(() => {
-      console.log('🔵 [Input] Timeout fired, calling searchUsers');
-      searchTimeoutRef.current = null; // Clear ref after timeout fires
-      searchUsers(value);
-    }, 300);
+    console.log('🔵 [Search] Triggering search for:', searchValue);
+    setError(''); // Clear any previous errors
+    setIsSearching(true);
+    await searchUsers(searchValue);
   };
 
   // Handle selecting a user from dropdown
@@ -493,6 +535,7 @@ export default function ReceiptUploadUI() {
     setSearchResults([]);
     console.log('🔵 [Select] Person added:', newPerson);
   };
+
 
   // Cleanup timeout on unmount
   useEffect(() => {
@@ -674,6 +717,7 @@ export default function ReceiptUploadUI() {
       setUploadProgress(90);
 
       // Insert line items with split information
+      let lineItemsData: Array<{ id: string; item_name: string | null }> | null = null;
       if (receipt.items && receipt.items.length > 0) {
         const lineItems = receipt.items.map(item => ({
           receipt_id: insertedReceipt.id,
@@ -684,7 +728,7 @@ export default function ReceiptUploadUI() {
           assigned_split_id: null, // Could extend to store split data
         }));
 
-        const { data: lineItemsData, error: lineItemsError } = await supabase
+        const { data: insertedLineItems, error: lineItemsError } = await supabase
           .from('line_items')
           .insert(lineItems)
           .select();
@@ -694,10 +738,11 @@ export default function ReceiptUploadUI() {
           throw lineItemsError; // This should fail the whole save
         }
         
+        lineItemsData = insertedLineItems;
         console.log('Successfully inserted line items:', lineItemsData?.length || 0, 'items');
       }
 
-      // Add current user as a participant in receipt_participants
+      // Add all people as participants in receipt_participants
       const DEFAULT_COLORS = [
         'bg-blue-100 text-blue-800',
         'bg-green-100 text-green-800',
@@ -707,54 +752,168 @@ export default function ReceiptUploadUI() {
         'bg-indigo-100 text-indigo-800',
       ];
       
-      // Check if participant already exists first (to avoid unique constraint errors)
-      console.log('Checking for existing participant - receipt_id:', insertedReceipt.id, 'user_id:', user.id);
-      const { data: existingParticipant, error: checkError } = await supabase
-        .from('receipt_participants')
-        .select('id')
-        .eq('receipt_id', insertedReceipt.id)
-        .eq('user_id', user.id)
-        .maybeSingle();
+      console.log('🔵 [Save] Adding participants...');
+      // Map person IDs to user_ids: "1" = current user, others = actual user_ids
+      const personIdToUserId: Record<string, string> = {};
+      personIdToUserId["1"] = user.id; // "You" maps to current user
+      
+      // Add all people as participants (skip if already exists)
+      const participantsToAdd = [];
+      for (let i = 0; i < people.length; i++) {
+        const person = people[i];
+        let userId: string;
+        
+        if (person.id === "1") {
+          // "You" - use current user
+          userId = user.id;
+        } else {
+          // Other people - their id is already the user_id
+          userId = person.id;
+        }
+        
+        personIdToUserId[person.id] = userId;
+        
+        // Check if participant already exists
+        const { data: existingParticipant } = await supabase
+          .from('receipt_participants')
+          .select('id')
+          .eq('receipt_id', insertedReceipt.id)
+          .eq('user_id', userId)
+          .maybeSingle();
 
-      if (checkError) {
-        console.error('Error checking for existing participant:', checkError);
+        if (!existingParticipant) {
+          participantsToAdd.push({
+            receipt_id: insertedReceipt.id,
+            user_id: userId,
+            color: person.color || DEFAULT_COLORS[i % DEFAULT_COLORS.length],
+          });
+        }
       }
 
-      if (!existingParticipant) {
-        console.log('No existing participant found, inserting new participant...');
-        const { data: participantData, error: participantError } = await supabase
+      if (participantsToAdd.length > 0) {
+        const { error: participantsError } = await supabase
           .from('receipt_participants')
-          .insert({
-            receipt_id: insertedReceipt.id,
-            user_id: user.id,
-            color: DEFAULT_COLORS[0],
-          })
-          .select()
-          .single();
+          .insert(participantsToAdd);
 
-        if (participantError) {
-          console.error('Failed to add participant - Error:', participantError);
-          console.error('Error details:', JSON.stringify(participantError, null, 2));
-          // Show error but don't fail the whole save
-          setError(`Warning: Receipt saved but failed to add participant: ${participantError?.message || 'Unknown error'}`);
-        } else if (!participantData) {
-          console.error('Failed to add participant - No data returned');
-          setError('Warning: Receipt saved but failed to add participant: No data returned');
+        if (participantsError) {
+          console.error('Failed to add participants:', participantsError);
+          // Don't fail - continue with assignments
         } else {
-          console.log('✅ Successfully added participant:', participantData.id);
-          console.log('Participant data:', participantData);
+          console.log('✅ Successfully added', participantsToAdd.length, 'participants');
         }
+      }
+
+      // Save line item assignments
+      console.log('🔵 [Save] Saving line item assignments...');
+      if (receipt.items && receipt.items.length > 0 && lineItemsData && lineItemsData.length > 0) {
+        const assignmentsToInsert: Array<{ line_item_id: string; user_id: string }> = [];
+        
+        // Match receipt items to line items by index (they should be in the same order)
+        receipt.items.forEach((item, index) => {
+          const lineItem = lineItemsData![index]; // Safe because we checked lineItemsData is not null above
+          if (!lineItem || !lineItem.id) return;
+
+          // Map person IDs to user_ids for this item's assignments
+          item.assignedTo.forEach(personId => {
+            const userId = personIdToUserId[personId];
+            if (userId) {
+              assignmentsToInsert.push({
+                line_item_id: lineItem.id,
+                user_id: userId,
+              });
+            }
+          });
+        });
+
+        if (assignmentsToInsert.length > 0) {
+          const { error: assignmentsError } = await supabase
+            .from('line_item_assignments')
+            .insert(assignmentsToInsert);
+
+          if (assignmentsError) {
+            console.error('Failed to insert assignments:', assignmentsError);
+            throw assignmentsError;
+          }
+          console.log('✅ Successfully saved', assignmentsToInsert.length, 'assignments');
+        }
+      }
+
+      // Calculate and save splits
+      console.log('🔵 [Save] Calculating splits...');
+      console.log('🔵 [Save] personIdToUserId mapping:', personIdToUserId);
+      console.log('🔵 [Save] Receipt items:', receipt.items);
+      const payerId = user.id; // Person who uploaded is the payer
+      console.log('🔵 [Save] Payer ID (uploader):', payerId);
+      const participantOwedAmounts: Record<string, number> = {}; // user_id -> total amount owed
+
+      if (receipt.items && receipt.items.length > 0) {
+        receipt.items.forEach((item, itemIndex) => {
+          const itemPrice = item.price || 0;
+          if (itemPrice <= 0) return;
+
+          const assignedCount = item.assignedTo.length;
+          if (assignedCount === 0) return;
+
+          const splitAmount = itemPrice / assignedCount;
+          console.log(`🔵 [Save] Item "${item.name}": $${itemPrice} split ${assignedCount} ways = $${splitAmount.toFixed(2)} each`);
+          console.log(`🔵 [Save] Item assignedTo personIds:`, item.assignedTo);
+          
+          item.assignedTo.forEach(personId => {
+            const userId = personIdToUserId[personId];
+            console.log(`🔵 [Save] Person ID "${personId}" maps to user_id: "${userId}"`);
+            if (userId && userId !== payerId) {
+              // Only track what non-payers owe
+              participantOwedAmounts[userId] = (participantOwedAmounts[userId] || 0) + splitAmount;
+              console.log(`🔵 [Save] Added $${splitAmount.toFixed(2)} to ${userId}'s total. New total: $${((participantOwedAmounts[userId] || 0) + splitAmount).toFixed(2)}`);
+            } else if (userId === payerId) {
+              console.log(`🔵 [Save] Skipping payer (${userId}) - they don't owe themselves`);
+            } else {
+              console.warn(`🔵 [Save] Could not find userId for personId: ${personId}`);
+            }
+          });
+        });
+      }
+
+      console.log('🔵 [Save] Final participantOwedAmounts:', participantOwedAmounts);
+
+      // Delete existing splits for this receipt
+      await supabase
+        .from('splits')
+        .delete()
+        .eq('receipt_id', insertedReceipt.id);
+
+      // Create splits records
+      const splitsToInsert = Object.entries(participantOwedAmounts).map(([participantUserId, amount]) => ({
+        receipt_id: insertedReceipt.id,
+        payer_id: payerId,
+        participant_id: participantUserId,
+        amount_owed: Math.round(amount * 100) / 100,
+        split_type: 'item_based',
+      }));
+
+      console.log('🔵 [Save] Splits to insert:', splitsToInsert);
+
+      if (splitsToInsert.length > 0) {
+        const { error: splitsError } = await supabase
+          .from('splits')
+          .insert(splitsToInsert);
+
+        if (splitsError) {
+          console.error('Failed to insert splits:', splitsError);
+          throw splitsError;
+        }
+        console.log('✅ Successfully saved', splitsToInsert.length, 'splits');
       } else {
-        console.log('Participant already exists for this receipt:', existingParticipant.id);
+        console.log('🔵 [Save] No splits to save (all items assigned to payer only or no items)');
       }
 
       setUploadProgress(100);
       setIsProcessing(false);
       console.log('=== Save process completed successfully ===');
-      console.log('=== Navigating to LineItemsSelectPage with receipt ID:', insertedReceipt.id);
+      console.log('=== Navigating to Dashboard ===');
       
-      // Navigate to line items selection page to assign items to people
-      navigate(`/receipts/${insertedReceipt.id}/select-items`);
+      // Navigate to dashboard - everything is saved!
+      navigate('/dashboard');
     } catch (e) {
       console.error('❌❌❌ === Error in handleSaveAndShare ===', e);
       console.error('Error details:', JSON.stringify(e, null, 2));
@@ -1034,23 +1193,18 @@ export default function ReceiptUploadUI() {
                             handleInputChange(e.target.value);
                           }}
                           onClick={() => console.log('🔴🔴🔴 INPUT CLICKED!')}
-                          onKeyPress={(e) => e.key === 'Enter' && addPerson()}
-                          onFocus={() => {
-                            console.log('🔵 [Input] Input focused. searchResults.length:', searchResults.length, 'isSearching:', isSearching);
-                            // If there are existing results, show dropdown
-                            if (searchResults.length > 0) {
-                              console.log('🔵 [Input] Showing dropdown because results exist');
-                              setShowDropdown(true);
-                            }
-                            // If user is typing and we have a value, trigger search if not already searching
-                            if (newPersonName.trim().length >= 2 && !isSearching && searchResults.length === 0) {
-                              console.log('🔵 [Input] Triggering search on focus');
-                              handleInputChange(newPersonName);
+                          onKeyPress={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleSearch();
                             }
                           }}
                           onBlur={() => {
                             console.log('🔵 [Input] Input blurred');
-                            setTimeout(() => setShowDropdown(false), 200);
+                            // Give time for click events on dropdown items to register
+                            setTimeout(() => {
+                              setShowDropdown(false);
+                            }, 200);
                           }}
                           placeholder="Search by name..."
                           className="w-full px-3 py-1.5 text-sm border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -1084,11 +1238,12 @@ export default function ReceiptUploadUI() {
                         )}
                       </div>
                       <button
-                        onClick={addPerson}
-                        disabled={!newPersonName.trim()}
-                        className="px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                        onClick={handleSearch}
+                        disabled={!newPersonName.trim() || newPersonName.trim().length < 2}
+                        className="px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                        title="Search for users"
                       >
-                        <Plus className="w-4 h-4" />
+                        <Search className="w-4 h-4" />
                       </button>
                     </div>
                   </div>
