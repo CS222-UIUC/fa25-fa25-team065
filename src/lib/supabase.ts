@@ -115,10 +115,10 @@ export async function getUserByEmail(email: string): Promise<{ id: string; email
 /** 
  * Ensure a users row exists linked to Supabase Auth (returns users.id).
  * For Google OAuth users:
- * - If email doesn't exist: Creates new row with email, username (Gmail tag), password_hash=NULL, method=NULL
+ * - If email doesn't exist: Creates new row with email, username (Gmail tag), name (from Google), password_hash=NULL, method=NULL
  * - If email exists: Returns existing user ID (preserves existing data)
  */
-export async function getOrCreateUserByAuth(_authUserId: string, email: string | null): Promise<string> {
+export async function getOrCreateUserByAuth(_authUserId: string, email: string | null, name?: string | null): Promise<string> {
   if (!email) throw new Error('Missing email for user linkage');
 
   const existing = await getUserByEmail(email);
@@ -162,6 +162,7 @@ export async function getOrCreateUserByAuth(_authUserId: string, email: string |
     .insert({ 
       email,
       username: username,
+      name: name || null,
       password_hash: null,
       method: null
     })
