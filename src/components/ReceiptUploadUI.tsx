@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../supabase/client';
+import { supabase } from '../lib/supabase';
 import { createWorker } from 'tesseract.js';
 import Tesseract from 'tesseract.js';
 
@@ -422,22 +422,29 @@ export default function ReceiptUploadUI() {
   // SAVE TO SUPABASE
   // ============================================================================
   const handleSaveAndShare = async () => {
+    console.log('=== Starting handleSaveAndShare ===');
+    
     if (!receipt?.file) {
+      console.error('No receipt file to save');
       setError("No receipt file to save");
       return;
     }
 
     const rawUser = localStorage.getItem('user');
     if (!rawUser) {
+      console.error('No user found in localStorage');
       setError("You must be logged in");
       return;
     }
     const user = JSON.parse(rawUser) as { id: string };
+    console.log('User from localStorage:', user);
 
     try {
       setIsProcessing(true);
       setError("");
       setUploadProgress(0);
+      setOcrProgress(0); // Reset OCR progress so it doesn't show "Extracting text..." when saving
+      console.log('Starting save process...');
 
       // Upload file to Supabase Storage
       const ext = (receipt.file.name.split('.').pop() || 'bin').toLowerCase();
@@ -459,6 +466,7 @@ export default function ReceiptUploadUI() {
       setUploadProgress(75);
 
       // Insert receipt record
+      console.log('Inserting receipt for user:', user.id);
       const { data: insertedReceipt, error: insertErr } = await supabase
         .from('receipts')
         .insert({
@@ -473,7 +481,12 @@ export default function ReceiptUploadUI() {
         .select('id')
         .single();
       
-      if (insertErr || !insertedReceipt) throw insertErr || new Error('Failed to save receipt');
+      if (insertErr || !insertedReceipt) {
+        console.error('Failed to insert receipt:', insertErr);
+        throw insertErr || new Error('Failed to save receipt');
+      }
+      
+      console.log('Successfully inserted receipt:', insertedReceipt.id);
       setUploadProgress(90);
 
       // Insert line items with split information
@@ -487,15 +500,78 @@ export default function ReceiptUploadUI() {
           assigned_split_id: null, // Could extend to store split data
         }));
 
-        await supabase.from('line_items').insert(lineItems);
+        const { data: lineItemsData, error: lineItemsError } = await supabase
+          .from('line_items')
+          .insert(lineItems)
+          .select();
+
+        if (lineItemsError) {
+          console.error('Failed to insert line items:', lineItemsError);
+          throw lineItemsError; // This should fail the whole save
+        }
+        
+        console.log('Successfully inserted line items:', lineItemsData?.length || 0, 'items');
+      }
+
+      // Add current user as a participant in receipt_participants
+      const DEFAULT_COLORS = [
+        'bg-blue-100 text-blue-800',
+        'bg-green-100 text-green-800',
+        'bg-purple-100 text-purple-800',
+        'bg-orange-100 text-orange-800',
+        'bg-pink-100 text-pink-800',
+        'bg-indigo-100 text-indigo-800',
+      ];
+      
+      // Check if participant already exists first (to avoid unique constraint errors)
+      console.log('Checking for existing participant - receipt_id:', insertedReceipt.id, 'user_id:', user.id);
+      const { data: existingParticipant, error: checkError } = await supabase
+        .from('receipt_participants')
+        .select('id')
+        .eq('receipt_id', insertedReceipt.id)
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (checkError) {
+        console.error('Error checking for existing participant:', checkError);
+      }
+
+      if (!existingParticipant) {
+        console.log('No existing participant found, inserting new participant...');
+        const { data: participantData, error: participantError } = await supabase
+          .from('receipt_participants')
+          .insert({
+            receipt_id: insertedReceipt.id,
+            user_id: user.id,
+            color: DEFAULT_COLORS[0],
+          })
+          .select()
+          .single();
+
+        if (participantError) {
+          console.error('Failed to add participant - Error:', participantError);
+          console.error('Error details:', JSON.stringify(participantError, null, 2));
+          // Show error but don't fail the whole save
+          setError(`Warning: Receipt saved but failed to add participant: ${participantError?.message || 'Unknown error'}`);
+        } else if (!participantData) {
+          console.error('Failed to add participant - No data returned');
+          setError('Warning: Receipt saved but failed to add participant: No data returned');
+        } else {
+          console.log('✅ Successfully added participant:', participantData.id);
+          console.log('Participant data:', participantData);
+        }
+      } else {
+        console.log('Participant already exists for this receipt:', existingParticipant.id);
       }
 
       setUploadProgress(100);
       setIsProcessing(false);
+      console.log('=== Save process completed successfully ===');
       
       // Navigate to thank you page
       navigate('/thank-you');
     } catch (e) {
+      console.error('=== Error in handleSaveAndShare ===', e);
       setIsProcessing(false);
       setError(e instanceof Error ? e.message : 'Failed to save receipt');
     }
