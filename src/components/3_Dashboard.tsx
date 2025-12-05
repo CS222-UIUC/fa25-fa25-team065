@@ -7,23 +7,35 @@ const Dashboard: React.FC = () => {
   const [isSigningOut, setIsSigningOut] = useState(false);
 
   const handleSignOut = async () => {
+    console.log('🔴 [Dashboard] Sign out initiated');
     setIsSigningOut(true);
+    
+    // Clear localStorage immediately
+    console.log('🔴 [Dashboard] Clearing localStorage...');
+    localStorage.removeItem('user');
+    console.log('🔴 [Dashboard] localStorage cleared');
+    
+    // Navigate immediately (don't wait for signOut)
+    console.log('🔴 [Dashboard] Navigating to landing page...');
+    navigate('/', { replace: true });
+    console.log('🔴 [Dashboard] Navigation called');
+    
+    // Try to sign out from Supabase in the background (don't block on it)
     try {
-      // Sign out from Supabase Auth (works for both email/password and OAuth)
-      await SupabaseAuthService.signOut();
+      console.log('🔴 [Dashboard] Calling SupabaseAuthService.signOut()...');
+      // Use Promise.race with timeout to prevent hanging
+      const signOutPromise = SupabaseAuthService.signOut();
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Sign out timeout')), 3000)
+      );
       
-      // Clear localStorage (the auth state listener in App.tsx will also handle this,
-      // but we do it here as well to ensure immediate cleanup)
-      localStorage.removeItem('user');
-      
-      // Navigate to home page
-      navigate('/');
+      await Promise.race([signOutPromise, timeoutPromise]);
+      console.log('🔴 [Dashboard] SupabaseAuthService.signOut() completed successfully');
     } catch (error) {
-      console.error('Sign out error:', error);
-      // Even if there's an error, clear local state and redirect
-      localStorage.removeItem('user');
-      navigate('/');
+      console.error('❌ [Dashboard] Sign out error (non-blocking):', error);
+      // Don't throw - we've already navigated and cleared localStorage
     } finally {
+      console.log('🔴 [Dashboard] Setting isSigningOut to false');
       setIsSigningOut(false);
     }
   };
@@ -41,7 +53,7 @@ const Dashboard: React.FC = () => {
               <h1 className="text-2xl font-bold text-primary-600">Splitify</h1>
             </div>
             <div className="flex items-center space-x-4">
-              <span className="text-secondary-600">Welcome, {user.username || user.email}!</span>
+              <span className="text-secondary-600">Welcome, {user.name || user.username || user.email}!</span>
               <button 
                 onClick={handleSignOut}
                 disabled={isSigningOut}

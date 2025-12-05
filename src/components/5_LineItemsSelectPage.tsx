@@ -31,8 +31,9 @@ const DEFAULT_COLORS = [
 ];
 
 const LineItemsSelectPage: React.FC = () => {
-  console.log('🔵 LineItemsSelectPage component rendered/mounted');
+  console.log('🔵 [LineItemsSelectPage] Component rendered/mounted');
   const { receiptId } = useParams<{ receiptId: string }>();
+  console.log('🔵 [LineItemsSelectPage] receiptId from params:', receiptId);
   const navigate = useNavigate();
   const [items, setItems] = useState<LineItem[]>([]);
   const [participants, setParticipants] = useState<Participant[]>([]);
@@ -42,7 +43,7 @@ const LineItemsSelectPage: React.FC = () => {
   const [error, setError] = useState('');
   const [newParticipantInput, setNewParticipantInput] = useState('');
   const [addingParticipant, setAddingParticipant] = useState(false);
-  const [searchResults, setSearchResults] = useState<Array<{ id: string; username: string | null; email: string }>>([]);
+  const [searchResults, setSearchResults] = useState<Array<{ id: string; username: string | null; email: string; name: string | null }>>([]);
   const [showDropdown, setShowDropdown] = useState(false);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -97,34 +98,6 @@ const LineItemsSelectPage: React.FC = () => {
       setError(e instanceof Error ? e.message : 'Failed to add participant');
     }
   }, [receiptId, participants]);
-
-  // Fetch all users for debugging
-  useEffect(() => {
-    console.log('🔵 fetchAllUsers useEffect running...');
-    const fetchAllUsers = async () => {
-      try {
-        console.log('🔵 Fetching all users from database...');
-        const { data: allUsers, error: allUsersError } = await supabase
-          .from('users')
-          .select('id, username, email')
-          .limit(100);
-        
-        if (allUsersError) {
-          console.error('❌ Error fetching all users:', allUsersError);
-        } else {
-          console.log('🔵 === ALL USERS IN DATABASE ===');
-          console.log('🔵 Total users:', allUsers?.length || 0);
-          allUsers?.forEach((user, index) => {
-            console.log(`🔵 ${index + 1}. Username: "${user.username || 'NULL'}", Email: "${user.email}"`);
-          });
-          console.log('🔵 === END ALL USERS ===');
-        }
-      } catch (e) {
-        console.error('❌ Error in fetchAllUsers:', e);
-      }
-    };
-    fetchAllUsers();
-  }, []);
 
   // Load items, participants, and assignments
   useEffect(() => {
@@ -266,15 +239,20 @@ const LineItemsSelectPage: React.FC = () => {
     };
   }, []);
 
-  // Search users by username as they type
+  // Debug dropdown state changes
+  useEffect(() => {
+    console.log('🔵 [Dropdown] State changed - showDropdown:', showDropdown, 'searchResults.length:', searchResults.length);
+    if (searchResults.length > 0) {
+      console.log('🔵 [Dropdown] Search results available:', searchResults.map(u => u.name || u.username || u.email));
+    }
+  }, [showDropdown, searchResults]);
+
+  // Search users by name as they type
   const searchUsers = useCallback(async (query: string) => {
-    console.log('🔵 === searchUsers called ===');
-    console.log('🔵 Query:', query);
-    console.log('🔵 Query length:', query.length);
-    console.log('🔵 Query trimmed:', query.trim());
+    console.log('🔵 [Search] searchUsers called with query:', query);
     
     if (!query.trim() || query.length < 2) {
-      console.log('🔵 Query too short, clearing results');
+      console.log('🔵 [Search] Query too short, clearing results');
       setSearchResults([]);
       setShowDropdown(false);
       return;
@@ -282,45 +260,42 @@ const LineItemsSelectPage: React.FC = () => {
 
     try {
       const searchTerm = query.trim();
-      console.log('🔵 Searching for users with term:', searchTerm);
-      console.log('🔵 Current participants:', participants);
+      console.log('🔵 [Search] Sending search request for term:', searchTerm);
+      console.log('🔵 [Search] Current participants:', participants.length);
       
-      // Search username (case-insensitive)
-      // Note: ilike will only match non-null values, so we don't need explicit null filter
-      console.log('🔵 Making Supabase query...');
+      // Search by name (case-insensitive) - name is the primary search field
+      // Also search username and email as fallback
       const { data: usersData, error: usersError } = await supabase
         .from('users')
-        .select('id, username, email')
-        .ilike('username', `%${searchTerm}%`)
+        .select('id, username, email, name')
+        .or(`name.ilike.%${searchTerm}%,username.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%`)
         .limit(10);
 
-      console.log('🔵 Supabase response - data:', usersData);
-      console.log('🔵 Supabase response - error:', usersError);
+      console.log('🔵 [Search] Search request returned');
+      console.log('🔵 [Search] Response data:', usersData);
+      console.log('🔵 [Search] Response error:', usersError);
+      console.log('🔵 [Search] Number of users found:', usersData?.length || 0);
 
       if (usersError) {
-        console.error('❌ Error searching users:', usersError);
+        console.error('❌ [Search] Error searching users:', usersError);
         setSearchResults([]);
         setShowDropdown(false);
         return;
       }
-
-      console.log('🔵 Found users (raw):', usersData);
-      console.log('🔵 Number of users found:', usersData?.length || 0);
 
       // Filter out users who are already participants
       const filteredUsers = (usersData || []).filter(
         user => !participants.some(p => p.user_id === user.id)
       );
 
-      console.log('🔵 Filtered users (after removing participants):', filteredUsers);
-      console.log('🔵 Number of filtered users:', filteredUsers.length);
-      console.log('🔵 Setting searchResults and showDropdown');
+      console.log('🔵 [Search] After filtering participants:', filteredUsers.length, 'users');
+      console.log('🔵 [Search] Filtered users:', filteredUsers.map(u => ({ name: u.name, username: u.username, email: u.email })));
+
       setSearchResults(filteredUsers);
       setShowDropdown(filteredUsers.length > 0);
-      console.log('🔵 === searchUsers completed ===');
+      console.log('🔵 [Search] Search completed. Dropdown will show:', filteredUsers.length > 0);
     } catch (e) {
-      console.error('❌ Error in searchUsers:', e);
-      console.error('❌ Error stack:', e instanceof Error ? e.stack : 'No stack');
+      console.error('❌ [Search] Error in searchUsers:', e);
       setSearchResults([]);
       setShowDropdown(false);
     }
@@ -328,19 +303,20 @@ const LineItemsSelectPage: React.FC = () => {
 
   // Handle input change with debounced search
   const handleInputChange = (value: string) => {
-    console.log('🔵 handleInputChange called with value:', value);
+    console.log('🔵 [Input] handleInputChange called with value:', value);
     setNewParticipantInput(value);
     setError('');
 
     // Clear existing timeout
     if (searchTimeoutRef.current) {
+      console.log('🔵 [Input] Clearing previous timeout');
       clearTimeout(searchTimeoutRef.current);
     }
 
     // Debounce search
-    console.log('🔵 Setting timeout for search...');
+    console.log('🔵 [Input] Setting timeout for search (300ms delay)');
     searchTimeoutRef.current = setTimeout(() => {
-      console.log('🔵 Timeout fired, calling searchUsers with:', value);
+      console.log('🔵 [Input] Timeout fired, calling searchUsers');
       searchUsers(value);
     }, 300);
   };
@@ -396,7 +372,7 @@ const LineItemsSelectPage: React.FC = () => {
   };
 
   // Handle selecting a user from dropdown
-  const handleSelectUser = async (user: { id: string; username: string | null; email: string }) => {
+  const handleSelectUser = async (user: { id: string; username: string | null; email: string; name: string | null }) => {
     setAddingParticipant(true);
     setError('');
     setShowDropdown(false);
@@ -675,23 +651,27 @@ const LineItemsSelectPage: React.FC = () => {
                         type="text"
                         value={newParticipantInput}
                         onChange={(e) => {
-                          console.log('🔵 INPUT onChange fired!', e.target.value);
+                          console.log('🔴🔴🔴 INPUT CHANGED! Value:', e.target.value);
                           handleInputChange(e.target.value);
                         }}
-                        onClick={() => console.log('🔵 INPUT clicked!')}
+                        onClick={() => console.log('🔴🔴🔴 INPUT CLICKED!')}
                         onKeyPress={(e) => e.key === 'Enter' && !addingParticipant && addParticipant()}
                         onFocus={() => {
-                          console.log('🔵 INPUT focused!');
+                          console.log('🔵 [Input] Input focused. searchResults.length:', searchResults.length);
                           if (searchResults.length > 0) {
+                            console.log('🔵 [Input] Showing dropdown because results exist');
                             setShowDropdown(true);
                           }
                         }}
                         onBlur={() => {
-                          console.log('🔵 INPUT blurred!');
+                          console.log('🔵 [Input] Input blurred');
                           // Delay to allow click on dropdown item
-                          setTimeout(() => setShowDropdown(false), 200);
+                          setTimeout(() => {
+                            console.log('🔵 [Input] Hiding dropdown after blur delay');
+                            setShowDropdown(false);
+                          }, 200);
                         }}
-                        placeholder="Email or username..."
+                        placeholder="Search by name..."
                         className="w-full px-3 py-1.5 text-sm border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                       {/* Dropdown with search results */}
@@ -708,9 +688,15 @@ const LineItemsSelectPage: React.FC = () => {
                               }}
                               className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 focus:bg-blue-50 focus:outline-none border-b border-slate-100 last:border-b-0"
                             >
-                              <div className="font-medium text-slate-800">{user.username || 'No username'}</div>
-                              {user.email && (
-                                <div className="text-xs text-slate-500">{user.email}</div>
+                              <div className="font-medium text-slate-800">
+                                {user.name || user.username || user.email || 'Unknown user'}
+                              </div>
+                              {(user.email || user.username) && (
+                                <div className="text-xs text-slate-500">
+                                  {user.email}
+                                  {user.username && user.email && ' • '}
+                                  {user.username && !user.name && user.username}
+                                </div>
                               )}
                             </button>
                           ))}
