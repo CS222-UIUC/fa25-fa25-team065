@@ -336,6 +336,14 @@ export default function ReceiptUploadUI() {
     setUploadProgress(0);
     setPeople([{ id: "1", name: "You", color: DEFAULT_COLORS[0] }]);
     setNewPersonName("");
+    // Reset search state
+    setSearchResults([]);
+    setShowDropdown(false);
+    setIsSearching(false);
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+      searchTimeoutRef.current = null;
+    }
     if (inputRef.current) inputRef.current.value = "";
   };
 
@@ -450,12 +458,23 @@ export default function ReceiptUploadUI() {
     if (searchTimeoutRef.current) {
       console.log('🔵 [Input] Clearing previous timeout');
       clearTimeout(searchTimeoutRef.current);
+      searchTimeoutRef.current = null;
+    }
+
+    // If input is cleared, reset search state
+    if (!value.trim()) {
+      console.log('🔵 [Input] Input cleared, resetting search state');
+      setSearchResults([]);
+      setShowDropdown(false);
+      setIsSearching(false);
+      return;
     }
 
     // Debounce search
     console.log('🔵 [Input] Setting timeout for search (300ms delay)');
     searchTimeoutRef.current = setTimeout(() => {
       console.log('🔵 [Input] Timeout fired, calling searchUsers');
+      searchTimeoutRef.current = null; // Clear ref after timeout fires
       searchUsers(value);
     }, 300);
   };
@@ -480,9 +499,22 @@ export default function ReceiptUploadUI() {
     return () => {
       if (searchTimeoutRef.current) {
         clearTimeout(searchTimeoutRef.current);
+        searchTimeoutRef.current = null;
       }
     };
   }, []);
+
+  // Reset search state when component mounts or when people list changes
+  useEffect(() => {
+    // Reset search state when people list changes to ensure fresh search
+    setSearchResults([]);
+    setShowDropdown(false);
+    setIsSearching(false);
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+      searchTimeoutRef.current = null;
+    }
+  }, [people.length]); // Reset when people count changes
 
   // ============================================================================
   // ITEM MANAGEMENT
@@ -541,22 +573,27 @@ export default function ReceiptUploadUI() {
   // SAVE TO SUPABASE
   // ============================================================================
   const handleSaveAndShare = async () => {
-    console.log('=== Starting handleSaveAndShare ===');
+    console.log('🔴🔴🔴 === Starting handleSaveAndShare ===');
+    console.log('🔴 Receipt:', receipt);
+    console.log('🔴 Receipt file:', receipt?.file);
+    console.log('🔴 Receipt items:', receipt?.items);
     
     if (!receipt?.file) {
-      console.error('No receipt file to save');
+      console.error('❌ No receipt file to save');
       setError("No receipt file to save");
+      alert('No receipt file to save. Please upload a receipt first.');
       return;
     }
 
     const rawUser = localStorage.getItem('user');
     if (!rawUser) {
-      console.error('No user found in localStorage');
+      console.error('❌ No user found in localStorage');
       setError("You must be logged in");
+      alert('You must be logged in to save receipts.');
       return;
     }
     const user = JSON.parse(rawUser) as { id: string };
-    console.log('User from localStorage:', user);
+    console.log('🔴 User from localStorage:', user);
 
     try {
       setIsProcessing(true);
@@ -569,27 +606,55 @@ export default function ReceiptUploadUI() {
       const ext = (receipt.file.name.split('.').pop() || 'bin').toLowerCase();
       const storagePath = `${user.id}/${receipt.id}.${ext}`;
 
+      console.log('🔴 Uploading file to storage path:', storagePath);
+      
+      // Try to upload, but if file already exists, that's okay - we'll use the existing one
       const { error: uploadErr } = await supabase.storage
         .from('receipts')
         .upload(storagePath, receipt.file, {
           contentType: receipt.mimeType || 'application/octet-stream',
-          upsert: false,
+          upsert: true, // Allow overwriting if file exists
         });
       
-      if (uploadErr) throw uploadErr;
+      if (uploadErr) {
+        // If error is "already exists", that's fine - continue with existing file
+        if (uploadErr.message?.includes('already exists') || uploadErr.message?.includes('duplicate')) {
+          console.log('🔵 File already exists in storage, using existing file');
+        } else {
+          console.error('❌ Upload error:', uploadErr);
+          throw uploadErr;
+        }
+      }
       setUploadProgress(50);
 
-      // Get public URL
+      // Get public URL (works whether file was just uploaded or already existed)
       const { data: pub } = supabase.storage.from('receipts').getPublicUrl(storagePath);
       const receiptUrl = pub?.publicUrl || null;
+      console.log('🔴 Receipt URL:', receiptUrl);
       setUploadProgress(75);
 
-      // Insert receipt record
+      // Verify Supabase auth session before inserting
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      console.log('🔴 Supabase session:', session ? 'exists' : 'null');
+      console.log('🔴 Session user ID (auth.users):', session?.user?.id);
+      console.log('🔴 Users table ID:', user.id);
+      console.log('🔴 Session error:', sessionError);
+      
+      if (!session) {
+        throw new Error('Not authenticated with Supabase. Please sign in again.');
+      }
+
+      // The RLS policy might be checking against auth.uid(), so we need to ensure
+      // the user_id matches what the policy expects. Let's try using the users table ID
+      // but also log what we're doing for debugging
       console.log('Inserting receipt for user:', user.id);
+      console.log('🔴 RLS Policy Check: The policy should allow inserts for authenticated users');
+      console.log('🔴 If this fails, the RLS policy needs to be updated in Supabase dashboard');
+      
       const { data: insertedReceipt, error: insertErr } = await supabase
         .from('receipts')
         .insert({
-          user_id: user.id,
+          user_id: user.id, // This is the users table ID
           merchant_name: receipt.merchant || null,
           total_amount: grandTotal || null,
           tax_amount: null,
@@ -691,9 +756,12 @@ export default function ReceiptUploadUI() {
       // Navigate to line items selection page to assign items to people
       navigate(`/receipts/${insertedReceipt.id}/select-items`);
     } catch (e) {
-      console.error('=== Error in handleSaveAndShare ===', e);
+      console.error('❌❌❌ === Error in handleSaveAndShare ===', e);
+      console.error('Error details:', JSON.stringify(e, null, 2));
       setIsProcessing(false);
-      setError(e instanceof Error ? e.message : 'Failed to save receipt');
+      const errorMessage = e instanceof Error ? e.message : 'Failed to save receipt';
+      setError(errorMessage);
+      alert(`Error saving receipt: ${errorMessage}`);
     }
   };
 
@@ -968,10 +1036,16 @@ export default function ReceiptUploadUI() {
                           onClick={() => console.log('🔴🔴🔴 INPUT CLICKED!')}
                           onKeyPress={(e) => e.key === 'Enter' && addPerson()}
                           onFocus={() => {
-                            console.log('🔵 [Input] Input focused. searchResults.length:', searchResults.length);
+                            console.log('🔵 [Input] Input focused. searchResults.length:', searchResults.length, 'isSearching:', isSearching);
+                            // If there are existing results, show dropdown
                             if (searchResults.length > 0) {
                               console.log('🔵 [Input] Showing dropdown because results exist');
                               setShowDropdown(true);
+                            }
+                            // If user is typing and we have a value, trigger search if not already searching
+                            if (newPersonName.trim().length >= 2 && !isSearching && searchResults.length === 0) {
+                              console.log('🔵 [Input] Triggering search on focus');
+                              handleInputChange(newPersonName);
                             }
                           }}
                           onBlur={() => {
@@ -1052,9 +1126,13 @@ export default function ReceiptUploadUI() {
                     Start Over
                   </button>
                   <button
-                    onClick={handleSaveAndShare}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      console.log('🔴🔴🔴 Button clicked!');
+                      handleSaveAndShare();
+                    }}
                     disabled={isProcessing}
-                    className="w-full px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+                    className="w-full px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isProcessing ? 'Saving...' : 'Save & Share'}
                   </button>
