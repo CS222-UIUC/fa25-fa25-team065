@@ -192,6 +192,7 @@ export default function ReceiptUploadUI() {
   const [recentError, setRecentError] = useState<string>("");
   const [searchResults, setSearchResults] = useState<Array<{ id: string; username: string | null; email: string; name: string | null }>>([]);
   const [showDropdown, setShowDropdown] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Fetch recent uploads
@@ -373,27 +374,33 @@ export default function ReceiptUploadUI() {
   // ============================================================================
   // Search users by name as they type
   const searchUsers = useCallback(async (query: string) => {
+    const startTime = performance.now();
     console.log('🔵 [Search] searchUsers called with query:', query);
     
     if (!query.trim() || query.length < 2) {
       console.log('🔵 [Search] Query too short, clearing results');
       setSearchResults([]);
       setShowDropdown(false);
+      setIsSearching(false);
       return;
     }
 
+    setIsSearching(true);
+    const searchTerm = query.trim();
+    console.log('🔵 [Search] Sending search request for term:', searchTerm);
+    const queryStartTime = performance.now();
+    
     try {
-      const searchTerm = query.trim();
-      console.log('🔵 [Search] Sending search request for term:', searchTerm);
-      
-      // Search by name (case-insensitive) - name is the primary search field
-      // Also search username and email as fallback
+      // Search by name first (primary search field) - simpler and faster
       const { data: usersData, error: usersError } = await supabase
         .from('users')
         .select('id, username, email, name')
-        .or(`name.ilike.%${searchTerm}%,username.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%`)
+        .ilike('name', `%${searchTerm}%`)
         .limit(10);
 
+      const queryEndTime = performance.now();
+      const queryDuration = queryEndTime - queryStartTime;
+      console.log(`⏱️ [Search] Query took ${queryDuration.toFixed(2)}ms`);
       console.log('🔵 [Search] Search request returned');
       console.log('🔵 [Search] Response data:', usersData);
       console.log('🔵 [Search] Number of users found:', usersData?.length || 0);
@@ -402,11 +409,12 @@ export default function ReceiptUploadUI() {
         console.error('❌ [Search] Error searching users:', usersError);
         setSearchResults([]);
         setShowDropdown(false);
+        setIsSearching(false);
         return;
       }
 
       // Filter out users who are already in the people list
-      const filteredUsers = (usersData || []).filter(
+      const filteredUsers = usersData.filter(
         user => !people.some(p => p.id === user.id)
       );
 
@@ -415,11 +423,20 @@ export default function ReceiptUploadUI() {
 
       setSearchResults(filteredUsers);
       setShowDropdown(filteredUsers.length > 0);
+      setIsSearching(false);
+      
+      const endTime = performance.now();
+      const totalDuration = endTime - startTime;
+      console.log(`⏱️ [Search] Total search function took ${totalDuration.toFixed(2)}ms`);
       console.log('🔵 [Search] Search completed. Dropdown will show:', filteredUsers.length > 0);
     } catch (e) {
-      console.error('❌ [Search] Error in searchUsers:', e);
+      const endTime = performance.now();
+      const totalDuration = endTime - startTime;
+      console.error('❌ [Search] Exception in searchUsers:', e);
+      console.log(`⏱️ [Search] Failed after ${totalDuration.toFixed(2)}ms`);
       setSearchResults([]);
       setShowDropdown(false);
+      setIsSearching(false);
     }
   }, [people]);
 
@@ -959,10 +976,7 @@ export default function ReceiptUploadUI() {
                           }}
                           onBlur={() => {
                             console.log('🔵 [Input] Input blurred');
-                            setTimeout(() => {
-                              console.log('🔵 [Input] Hiding dropdown after blur delay');
-                              setShowDropdown(false);
-                            }, 200);
+                            setTimeout(() => setShowDropdown(false), 200);
                           }}
                           placeholder="Search by name..."
                           className="w-full px-3 py-1.5 text-sm border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
