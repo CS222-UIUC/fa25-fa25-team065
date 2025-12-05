@@ -9,6 +9,7 @@ import Dashboard from './components/3_Dashboard';
 import ReceiptUploadUI from './components/4_ReceiptUploadUI';
 import LineItemsSelectPage from './components/5_LineItemsSelectPage';
 import ThankYouPage from './components/6_ThankYouPage';
+import NotificationsPage from './components/8_NotificationsPage';
 
 function AppContent() {
   const navigate = useNavigate();
@@ -97,6 +98,7 @@ function AppContent() {
         <Route path="/upload" element={<ReceiptUploadUI />} />
         <Route path="/receipts/:receiptId/select-items" element={<LineItemsSelectPage />} />
         <Route path="/thank-you" element={<ThankYouPage />} />
+        <Route path="/notifications" element={<NotificationsPage />} />
       </Routes>
     </div>
   );
