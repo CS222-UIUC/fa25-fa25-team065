@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import React, { useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
 type SplitWithDetails = {
@@ -28,178 +28,184 @@ type SplitWithDetails = {
 
 const NotificationsPage: React.FC = () => {
   const navigate = useNavigate();
-  const location = useLocation();
-  const [splits, setSplits] = useState<SplitWithDetails[]>([]); // What user owes
-  const [owedToMe, setOwedToMe] = useState<SplitWithDetails[]>([]); // Who owes user
+  
+  const [splits, setSplits] = useState<SplitWithDetails[]>([]);
+  const [owedToMe, setOwedToMe] = useState<SplitWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string>('');
-  const [totalOwed, setTotalOwed] = useState<number>(0);
-  const [totalOwedToMe, setTotalOwedToMe] = useState<number>(0);
-  const [currentUser, setCurrentUser] = useState<{ id: string; name?: string; username?: string; email?: string } | null>(null);
+  const [error, setError] = useState('');
+  
+  const [totalOwed, setTotalOwed] = useState(0);
+  const [totalOwedToMe, setTotalOwedToMe] = useState(0);
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
-  // Load user from localStorage once on mount
-  useEffect(() => {
-    const stored = localStorage.getItem('user');
-    if (stored) {
-      try {
-        const user = JSON.parse(stored);
-        if (user?.id) {
-          setCurrentUser(user);
-        } else {
-          navigate('/dashboard');
-        }
-      } catch (e) {
-        console.error('Error parsing user from localStorage:', e);
-        navigate('/dashboard');
-      }
-    } else {
-      navigate('/dashboard');
-    }
-  }, [navigate]);
-
-  // Reload data every time this route becomes active (fixes React Router caching issue)
-  // This ensures data refreshes when navigating back to this page even if component doesn't remount
-  useEffect(() => {
-    if (currentUser?.id && location.pathname === '/notifications') {
-      console.log('🔁 Route active → loading/refreshing splits');
-      loadSplits(currentUser.id);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname, currentUser?.id]);
-
-  const loadSplits = async (userId: string) => {
+  // ===========================================================
+  // 1️⃣ Fetch splits, receipts, users
+  // ===========================================================
+  const loadSplits = useCallback(async (userId: string) => {
     try {
-      setLoading(true);
       setError('');
 
-      console.log('🔵 [Notifications] Loading splits for user:', userId);
-
-      // Load splits where user owes (participant_id = userId)
-      const { data: splitsData, error: splitsError } = await supabase
+      // --- Fetch splits ---
+      const { data: owesData, error: owesError } = await supabase
         .from('splits')
-        .select('id, receipt_id, payer_id, participant_id, amount_owed, split_type')
+        .select('*')
         .eq('participant_id', userId);
 
-      // Load splits where user is owed (payer_id = userId)
-      const { data: owedToMeData, error: owedToMeError } = await supabase
+      const { data: owedData, error: owedError } = await supabase
         .from('splits')
-        .select('id, receipt_id, payer_id, participant_id, amount_owed, split_type')
+        .select('*')
         .eq('payer_id', userId);
 
-      if (splitsError) {
-        console.error('❌ [Notifications] Error loading splits:', splitsError);
-        throw splitsError;
+      if (owesError || owedError) {
+        throw owesError || owedError;
       }
 
-      if (owedToMeError) {
-        console.error('❌ [Notifications] Error loading owed to me:', owedToMeError);
-        throw owedToMeError;
+      // --- Load receipts + users for debts ---
+      const receiptIds1 = Array.from(new Set((owesData || []).map(s => s.receipt_id).filter(Boolean)));
+      const payerIds = Array.from(new Set((owesData || []).map(s => s.payer_id).filter(Boolean)));
+
+      let receipts1: any[] = [];
+      let payers: any[] = [];
+
+      if (receiptIds1.length > 0) {
+        const { data } = await supabase
+          .from('receipts')
+          .select('*')
+          .in('id', receiptIds1);
+        receipts1 = data || [];
       }
 
-      console.log('🔵 [Notifications] Splits found (user owes):', splitsData?.length || 0);
-      console.log('🔵 [Notifications] Splits found (owed to user):', owedToMeData?.length || 0);
-
-      // Process splits where user owes
-      let splitsWithDetails: SplitWithDetails[] = [];
-      if (splitsData && splitsData.length > 0) {
-        const receiptIds = Array.from(new Set(splitsData.map((s: any) => s.receipt_id)));
-        const payerIds = Array.from(new Set(splitsData.map((s: any) => s.payer_id)));
-
-        // Only query if we have IDs to query
-        if (receiptIds.length > 0 && payerIds.length > 0) {
-          const { data: receiptsData } = await supabase
-            .from('receipts')
-            .select('id, merchant_name, date_uploaded, total_amount')
-            .in('id', receiptIds);
-
-          const { data: payersData } = await supabase
-            .from('users')
-            .select('id, name, username, email')
-            .in('id', payerIds);
-
-          splitsWithDetails = splitsData.map((split: any) => {
-            const receipt = receiptsData?.find((r: any) => r.id === split.receipt_id);
-            const payer = payersData?.find((p: any) => p.id === split.payer_id);
-            return { ...split, receipt: receipt || null, payer: payer || null };
-          });
-
-          splitsWithDetails.sort((a, b) => {
-            const dateA = a.receipt?.date_uploaded ? new Date(a.receipt.date_uploaded).getTime() : 0;
-            const dateB = b.receipt?.date_uploaded ? new Date(b.receipt.date_uploaded).getTime() : 0;
-            return dateB - dateA;
-          });
-        }
+      if (payerIds.length > 0) {
+        const { data } = await supabase
+          .from('users')
+          .select('*')
+          .in('id', payerIds);
+        payers = data || [];
       }
 
-      // Process splits where user is owed
-      let owedToMeWithDetails: SplitWithDetails[] = [];
-      if (owedToMeData && owedToMeData.length > 0) {
-        const receiptIds = Array.from(new Set(owedToMeData.map((s: any) => s.receipt_id)));
-        const participantIds = Array.from(new Set(owedToMeData.map((s: any) => s.participant_id)));
+      const debts = (owesData || []).map(s => ({
+        ...s,
+        receipt: receipts1.find(r => r.id === s.receipt_id) || null,
+        payer: payers.find(u => u.id === s.payer_id) || null
+      }));
 
-        // Only query if we have IDs to query
-        if (receiptIds.length > 0 && participantIds.length > 0) {
-          const { data: receiptsData } = await supabase
-            .from('receipts')
-            .select('id, merchant_name, date_uploaded, total_amount')
-            .in('id', receiptIds);
+      // --- Load receipts + users for credits ---
+      const receiptIds2 = Array.from(new Set((owedData || []).map(s => s.receipt_id).filter(Boolean)));
+      const participantIds = Array.from(new Set((owedData || []).map(s => s.participant_id).filter(Boolean)));
 
-          const { data: participantsData } = await supabase
-            .from('users')
-            .select('id, name, username, email')
-            .in('id', participantIds);
+      let receipts2: any[] = [];
+      let participants: any[] = [];
 
-          owedToMeWithDetails = owedToMeData.map((split: any) => {
-            const receipt = receiptsData?.find((r: any) => r.id === split.receipt_id);
-            const participant = participantsData?.find((p: any) => p.id === split.participant_id);
-            return { ...split, receipt: receipt || null, participant: participant || null };
-          });
-
-          owedToMeWithDetails.sort((a, b) => {
-            const dateA = a.receipt?.date_uploaded ? new Date(a.receipt.date_uploaded).getTime() : 0;
-            const dateB = b.receipt?.date_uploaded ? new Date(b.receipt.date_uploaded).getTime() : 0;
-            return dateB - dateA;
-          });
-        }
+      if (receiptIds2.length > 0) {
+        const { data } = await supabase
+          .from('receipts')
+          .select('*')
+          .in('id', receiptIds2);
+        receipts2 = data || [];
       }
 
-      setSplits(splitsWithDetails);
-      setOwedToMe(owedToMeWithDetails);
+      if (participantIds.length > 0) {
+        const { data } = await supabase
+          .from('users')
+          .select('*')
+          .in('id', participantIds);
+        participants = data || [];
+      }
 
-      // Calculate totals
-      const totalOwedAmount = splitsWithDetails.reduce((sum, split) => sum + (split.amount_owed || 0), 0);
-      const totalOwedToMeAmount = owedToMeWithDetails.reduce((sum, split) => sum + (split.amount_owed || 0), 0);
-      setTotalOwed(Math.round(totalOwedAmount * 100) / 100);
-      setTotalOwedToMe(Math.round(totalOwedToMeAmount * 100) / 100);
-    } catch (e) {
-      console.error('Error loading splits:', e);
-      setError(e instanceof Error ? e.message : 'Failed to load your debts');
-    } finally {
-      setLoading(false);
+      const credits = (owedData || []).map(s => ({
+        ...s,
+        receipt: receipts2.find(r => r.id === s.receipt_id) || null,
+        participant: participants.find(u => u.id === s.participant_id) || null
+      }));
+
+      // Sort by date
+      debts.sort((a, b) => new Date(b.receipt?.date_uploaded || 0).getTime() -
+                            new Date(a.receipt?.date_uploaded || 0).getTime());
+
+      credits.sort((a, b) => new Date(b.receipt?.date_uploaded || 0).getTime() -
+                              new Date(a.receipt?.date_uploaded || 0).getTime());
+
+      setSplits(debts);
+      setOwedToMe(credits);
+
+      setTotalOwed(Math.round(debts.reduce((sum, s) => sum + (s.amount_owed || 0), 0) * 100) / 100);
+      setTotalOwedToMe(Math.round(credits.reduce((sum, s) => sum + (s.amount_owed || 0), 0) * 100) / 100);
+
+    } catch (err: any) {
+      console.error('Error loading splits:', err);
+      setError(err.message || 'Failed to load data');
     }
-  };
+  }, []);
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { 
-      year: 'numeric', 
-      month: 'short', 
-      day: 'numeric' 
+  // ===========================================================
+  // 2️⃣ MAIN DATA LOADER — Only load AFTER Supabase session restored
+  // ===========================================================
+  const loadInitial = useCallback(async () => {
+    setLoading(true);
+    setError('');
+
+    // Wait for Supabase to restore session (prevents RLS race)
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) {
+      navigate('/dashboard');
+      return;
+    }
+
+    // Load user from localStorage
+    const stored = localStorage.getItem('user');
+    if (!stored) {
+      navigate('/dashboard');
+      return;
+    }
+
+    const user = JSON.parse(stored);
+    setCurrentUser(user);
+
+    await loadSplits(user.id);
+    setLoading(false);
+  }, [navigate, loadSplits]);
+
+  // ===========================================================
+  // 3️⃣ Only run ONCE — avoids all race conditions
+  // ===========================================================
+  useEffect(() => {
+    loadInitial();
+  }, [loadInitial]);
+
+  // ===========================================================
+  // 4️⃣ Re-fetch when Supabase reauths (e.g. returning from tab)
+  // ===========================================================
+  useEffect(() => {
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user && currentUser?.id) {
+        console.log("Auth restored → refreshing data");
+        loadSplits(currentUser.id);
+      }
     });
+
+    return () => listener.subscription.unsubscribe();
+  }, [currentUser, loadSplits]);
+
+  // ===========================================================
+  // Helpers
+  // ===========================================================
+  const formatDate = (dateString: string | undefined | null) => {
+    if (!dateString) return 'Unknown date';
+    return new Date(dateString).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
   };
 
-  const formatCurrency = (amount: number) => {
-    return `$${amount.toFixed(2)}`;
-  };
+  const formatCurrency = (amount: number) => `$${amount.toFixed(2)}`;
 
-  const getPayerName = (payer: SplitWithDetails['payer']) => {
-    if (!payer) return 'Unknown';
-    return payer.name || payer.username || payer.email || 'Unknown';
-  };
+  const getDisplayName = (obj: any) =>
+    obj?.name || obj?.username || obj?.email || 'Unknown';
 
+  // ===========================================================
+  // Render
+  // ===========================================================
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 to-secondary-50">
-      {/* Navigation Bar */}
+      
+      {/* Navbar */}
       <nav className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
@@ -215,12 +221,13 @@ const NotificationsPage: React.FC = () => {
               <h1 className="text-2xl font-bold text-primary-600">Splitify</h1>
             </div>
             <div className="flex items-center space-x-4">
-              <span className="text-secondary-600">Welcome, {currentUser?.name || currentUser?.username || currentUser?.email}!</span>
+              <span className="text-secondary-600">Welcome, {getDisplayName(currentUser)}!</span>
             </div>
           </div>
         </div>
       </nav>
 
+      {/* Main */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-8">
@@ -253,11 +260,11 @@ const NotificationsPage: React.FC = () => {
           </div>
         )}
 
-        {/* Two Column Layout */}
         {!loading && !error && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Left Column: Who Owes You */}
-            <div>
+
+            {/* Who owes you */}
+            <section>
               <div className="bg-white rounded-xl shadow-sm border border-secondary-200 p-6 mb-4">
                 <div className="flex justify-between items-center">
                   <div>
@@ -296,33 +303,30 @@ const NotificationsPage: React.FC = () => {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {owedToMe.map((split) => (
-                    <div
-                      key={split.id}
-                      className="bg-white rounded-xl shadow-sm border border-secondary-200 p-4 hover:shadow-md transition-shadow"
-                    >
+                  {owedToMe.map(s => (
+                    <div key={s.id} className="bg-white rounded-xl shadow-sm border border-secondary-200 p-4 hover:shadow-md transition-shadow">
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
                           <div className="flex items-center space-x-2 mb-1">
                             <h3 className="text-base font-semibold text-secondary-900">
-                              {split.receipt?.merchant_name || 'Unknown Merchant'}
+                              {s.receipt?.merchant_name || 'Unknown Merchant'}
                             </h3>
-                            {split.receipt?.date_uploaded && (
+                            {s.receipt?.date_uploaded && (
                               <span className="text-xs text-secondary-500">
-                                {formatDate(split.receipt.date_uploaded)}
+                                {formatDate(s.receipt.date_uploaded)}
                               </span>
                             )}
                           </div>
                           <div className="flex items-center space-x-2 text-sm text-secondary-600">
                             <span className="font-semibold text-secondary-900">
-                              {split.participant?.name || split.participant?.username || split.participant?.email || 'Unknown'}
+                              {getDisplayName(s.participant)}
                             </span>
                             <span>owes you</span>
                           </div>
                         </div>
                         <div className="text-right ml-3">
                           <p className="text-xl font-bold text-green-600">
-                            {formatCurrency(split.amount_owed)}
+                            {formatCurrency(s.amount_owed)}
                           </p>
                         </div>
                       </div>
@@ -330,10 +334,10 @@ const NotificationsPage: React.FC = () => {
                   ))}
                 </div>
               )}
-            </div>
+            </section>
 
-            {/* Right Column: Your Debts */}
-            <div>
+            {/* Your debts */}
+            <section>
               <div className="bg-white rounded-xl shadow-sm border border-secondary-200 p-6 mb-4">
                 <div className="flex justify-between items-center">
                   <div>
@@ -372,33 +376,30 @@ const NotificationsPage: React.FC = () => {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {splits.map((split) => (
-                    <div
-                      key={split.id}
-                      className="bg-white rounded-xl shadow-sm border border-secondary-200 p-4 hover:shadow-md transition-shadow"
-                    >
+                  {splits.map(s => (
+                    <div key={s.id} className="bg-white rounded-xl shadow-sm border border-secondary-200 p-4 hover:shadow-md transition-shadow">
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
                           <div className="flex items-center space-x-2 mb-1">
                             <h3 className="text-base font-semibold text-secondary-900">
-                              {split.receipt?.merchant_name || 'Unknown Merchant'}
+                              {s.receipt?.merchant_name || 'Unknown Merchant'}
                             </h3>
-                            {split.receipt?.date_uploaded && (
+                            {s.receipt?.date_uploaded && (
                               <span className="text-xs text-secondary-500">
-                                {formatDate(split.receipt.date_uploaded)}
+                                {formatDate(s.receipt.date_uploaded)}
                               </span>
                             )}
                           </div>
                           <div className="flex items-center space-x-2 text-sm text-secondary-600">
                             <span>You owe</span>
                             <span className="font-semibold text-secondary-900">
-                              {getPayerName(split.payer)}
+                              {getDisplayName(s.payer)}
                             </span>
                           </div>
                         </div>
                         <div className="text-right ml-3">
                           <p className="text-xl font-bold text-red-600">
-                            {formatCurrency(split.amount_owed)}
+                            {formatCurrency(s.amount_owed)}
                           </p>
                         </div>
                       </div>
@@ -406,7 +407,8 @@ const NotificationsPage: React.FC = () => {
                   ))}
                 </div>
               )}
-            </div>
+            </section>
+
           </div>
         )}
       </main>
