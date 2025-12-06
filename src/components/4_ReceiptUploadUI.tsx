@@ -910,10 +910,10 @@ export default function ReceiptUploadUI() {
       setUploadProgress(100);
       setIsProcessing(false);
       console.log('=== Save process completed successfully ===');
-      console.log('=== Navigating to Dashboard ===');
+      console.log('=== Navigating to Thank You page ===');
       
-      // Navigate to dashboard - everything is saved!
-      navigate('/dashboard');
+      // Navigate to thank you page - everything is saved!
+      navigate('/thank-you');
     } catch (e) {
       console.error('❌❌❌ === Error in handleSaveAndShare ===', e);
       console.error('Error details:', JSON.stringify(e, null, 2));
