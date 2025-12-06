@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
 type SplitWithDetails = {
@@ -28,42 +28,63 @@ type SplitWithDetails = {
 
 const NotificationsPage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [splits, setSplits] = useState<SplitWithDetails[]>([]); // What user owes
   const [owedToMe, setOwedToMe] = useState<SplitWithDetails[]>([]); // Who owes user
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
   const [totalOwed, setTotalOwed] = useState<number>(0);
   const [totalOwedToMe, setTotalOwedToMe] = useState<number>(0);
+  const [currentUser, setCurrentUser] = useState<{ id: string; name?: string; username?: string; email?: string } | null>(null);
 
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
-
+  // Load user from localStorage once on mount
   useEffect(() => {
-    if (!user?.id) {
+    const stored = localStorage.getItem('user');
+    if (stored) {
+      try {
+        const user = JSON.parse(stored);
+        if (user?.id) {
+          setCurrentUser(user);
+        } else {
+          navigate('/dashboard');
+        }
+      } catch (e) {
+        console.error('Error parsing user from localStorage:', e);
+        navigate('/dashboard');
+      }
+    } else {
       navigate('/dashboard');
-      return;
     }
+  }, [navigate]);
 
-    loadSplits();
-  }, [user.id, navigate]);
+  // Reload data every time this route becomes active (fixes React Router caching issue)
+  // This ensures data refreshes when navigating back to this page even if component doesn't remount
+  useEffect(() => {
+    if (currentUser?.id && location.pathname === '/notifications') {
+      console.log('🔁 Route active → loading/refreshing splits');
+      loadSplits(currentUser.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, currentUser?.id]);
 
-  const loadSplits = async () => {
+  const loadSplits = async (userId: string) => {
     try {
       setLoading(true);
       setError('');
 
-      console.log('🔵 [Notifications] Loading splits for user:', user.id);
+      console.log('🔵 [Notifications] Loading splits for user:', userId);
 
-      // Load splits where user owes (participant_id = user.id)
+      // Load splits where user owes (participant_id = userId)
       const { data: splitsData, error: splitsError } = await supabase
         .from('splits')
         .select('id, receipt_id, payer_id, participant_id, amount_owed, split_type')
-        .eq('participant_id', user.id);
+        .eq('participant_id', userId);
 
-      // Load splits where user is owed (payer_id = user.id)
+      // Load splits where user is owed (payer_id = userId)
       const { data: owedToMeData, error: owedToMeError } = await supabase
         .from('splits')
         .select('id, receipt_id, payer_id, participant_id, amount_owed, split_type')
-        .eq('payer_id', user.id);
+        .eq('payer_id', userId);
 
       if (splitsError) {
         console.error('❌ [Notifications] Error loading splits:', splitsError);
@@ -84,27 +105,30 @@ const NotificationsPage: React.FC = () => {
         const receiptIds = Array.from(new Set(splitsData.map((s: any) => s.receipt_id)));
         const payerIds = Array.from(new Set(splitsData.map((s: any) => s.payer_id)));
 
-        const { data: receiptsData } = await supabase
-          .from('receipts')
-          .select('id, merchant_name, date_uploaded, total_amount')
-          .in('id', receiptIds);
+        // Only query if we have IDs to query
+        if (receiptIds.length > 0 && payerIds.length > 0) {
+          const { data: receiptsData } = await supabase
+            .from('receipts')
+            .select('id, merchant_name, date_uploaded, total_amount')
+            .in('id', receiptIds);
 
-        const { data: payersData } = await supabase
-          .from('users')
-          .select('id, name, username, email')
-          .in('id', payerIds);
+          const { data: payersData } = await supabase
+            .from('users')
+            .select('id, name, username, email')
+            .in('id', payerIds);
 
-        splitsWithDetails = splitsData.map((split: any) => {
-          const receipt = receiptsData?.find((r: any) => r.id === split.receipt_id);
-          const payer = payersData?.find((p: any) => p.id === split.payer_id);
-          return { ...split, receipt: receipt || null, payer: payer || null };
-        });
+          splitsWithDetails = splitsData.map((split: any) => {
+            const receipt = receiptsData?.find((r: any) => r.id === split.receipt_id);
+            const payer = payersData?.find((p: any) => p.id === split.payer_id);
+            return { ...split, receipt: receipt || null, payer: payer || null };
+          });
 
-        splitsWithDetails.sort((a, b) => {
-          const dateA = a.receipt?.date_uploaded ? new Date(a.receipt.date_uploaded).getTime() : 0;
-          const dateB = b.receipt?.date_uploaded ? new Date(b.receipt.date_uploaded).getTime() : 0;
-          return dateB - dateA;
-        });
+          splitsWithDetails.sort((a, b) => {
+            const dateA = a.receipt?.date_uploaded ? new Date(a.receipt.date_uploaded).getTime() : 0;
+            const dateB = b.receipt?.date_uploaded ? new Date(b.receipt.date_uploaded).getTime() : 0;
+            return dateB - dateA;
+          });
+        }
       }
 
       // Process splits where user is owed
@@ -113,27 +137,30 @@ const NotificationsPage: React.FC = () => {
         const receiptIds = Array.from(new Set(owedToMeData.map((s: any) => s.receipt_id)));
         const participantIds = Array.from(new Set(owedToMeData.map((s: any) => s.participant_id)));
 
-        const { data: receiptsData } = await supabase
-          .from('receipts')
-          .select('id, merchant_name, date_uploaded, total_amount')
-          .in('id', receiptIds);
+        // Only query if we have IDs to query
+        if (receiptIds.length > 0 && participantIds.length > 0) {
+          const { data: receiptsData } = await supabase
+            .from('receipts')
+            .select('id, merchant_name, date_uploaded, total_amount')
+            .in('id', receiptIds);
 
-        const { data: participantsData } = await supabase
-          .from('users')
-          .select('id, name, username, email')
-          .in('id', participantIds);
+          const { data: participantsData } = await supabase
+            .from('users')
+            .select('id, name, username, email')
+            .in('id', participantIds);
 
-        owedToMeWithDetails = owedToMeData.map((split: any) => {
-          const receipt = receiptsData?.find((r: any) => r.id === split.receipt_id);
-          const participant = participantsData?.find((p: any) => p.id === split.participant_id);
-          return { ...split, receipt: receipt || null, participant: participant || null };
-        });
+          owedToMeWithDetails = owedToMeData.map((split: any) => {
+            const receipt = receiptsData?.find((r: any) => r.id === split.receipt_id);
+            const participant = participantsData?.find((p: any) => p.id === split.participant_id);
+            return { ...split, receipt: receipt || null, participant: participant || null };
+          });
 
-        owedToMeWithDetails.sort((a, b) => {
-          const dateA = a.receipt?.date_uploaded ? new Date(a.receipt.date_uploaded).getTime() : 0;
-          const dateB = b.receipt?.date_uploaded ? new Date(b.receipt.date_uploaded).getTime() : 0;
-          return dateB - dateA;
-        });
+          owedToMeWithDetails.sort((a, b) => {
+            const dateA = a.receipt?.date_uploaded ? new Date(a.receipt.date_uploaded).getTime() : 0;
+            const dateB = b.receipt?.date_uploaded ? new Date(b.receipt.date_uploaded).getTime() : 0;
+            return dateB - dateA;
+          });
+        }
       }
 
       setSplits(splitsWithDetails);
@@ -188,7 +215,7 @@ const NotificationsPage: React.FC = () => {
               <h1 className="text-2xl font-bold text-primary-600">Splitify</h1>
             </div>
             <div className="flex items-center space-x-4">
-              <span className="text-secondary-600">Welcome, {user.name || user.username || user.email}!</span>
+              <span className="text-secondary-600">Welcome, {currentUser?.name || currentUser?.username || currentUser?.email}!</span>
             </div>
           </div>
         </div>
@@ -218,7 +245,7 @@ const NotificationsPage: React.FC = () => {
           <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
             <p className="text-red-800">{error}</p>
             <button
-              onClick={loadSplits}
+              onClick={() => currentUser?.id && loadSplits(currentUser.id)}
               className="mt-2 text-red-600 hover:text-red-800 underline"
             >
               Try again

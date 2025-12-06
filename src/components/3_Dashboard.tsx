@@ -63,6 +63,16 @@ const Dashboard: React.FC = () => {
                 </svg>
                 <span className="text-sm">My Debts</span>
               </button>
+              <button
+                onClick={() => navigate("/budget")}
+                className="text-secondary-600 hover:text-secondary-900 flex items-center space-x-1"
+                title="Budget Dashboard"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                <span className="text-sm">Budget</span>
+              </button>
               <span className="text-secondary-600">Welcome, {user.name || user.username || user.email}!</span>
               <button 
                 onClick={handleSignOut}
