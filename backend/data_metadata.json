@@ -1,0 +1,19 @@
+{
+  "categories": [
+    "Groceries",
+    "Transportation",
+    "Entertainment",
+    "Dining Out",
+    "Utilities",
+    "Shopping",
+    "Healthcare",
+    "Subscriptions"
+  ],
+  "num_users": 1000,
+  "num_months": 24,
+  "total_records": 24000,
+  "date_range": {
+    "start": "2023-12",
+    "end": "2025-11"
+  }
+}
