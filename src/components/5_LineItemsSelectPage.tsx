@@ -602,7 +602,7 @@ const LineItemsSelectPage: React.FC = () => {
       }
 
       // Navigate back or show success
-      navigate('/');
+      navigate('/notifications');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save assignments');
     } finally {
@@ -610,7 +610,7 @@ const LineItemsSelectPage: React.FC = () => {
     }
   };
 
-  const handleBack = () => navigate('/');
+  const handleBack = () => navigate('/notifications');
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-white">

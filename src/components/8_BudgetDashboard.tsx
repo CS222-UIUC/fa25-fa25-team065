@@ -45,7 +45,7 @@ export default function BudgetDashboard() {
           </h1>
           <button
             className="px-3 py-1.5 text-sm rounded-md border border-secondary-300 hover:bg-secondary-100 text-secondary-700"
-            onClick={() => navigate("/")}
+            onClick={() => navigate("/notifications")}
           >
             Back to Home
           </button>
