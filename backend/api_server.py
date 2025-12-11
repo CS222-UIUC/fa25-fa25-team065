@@ -16,7 +16,15 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for React frontend
+CORS(app, resources={
+    r"/api/*": {
+        "origins": [
+            "http://localhost:3000",
+            "https://fa25-splitify.vercel.app",
+            "https://*.vercel.app"  # Allows all Vercel preview deployments
+        ]
+    }
+})
 
 # Load the trained model
 try:
