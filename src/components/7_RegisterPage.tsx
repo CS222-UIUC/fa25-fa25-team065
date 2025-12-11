@@ -61,7 +61,7 @@ const RegisterPage: React.FC = () => {
         username: user.username
       }));
       
-      navigate('/');
+      navigate('/notifications');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed. Please try again.');
     } finally {
