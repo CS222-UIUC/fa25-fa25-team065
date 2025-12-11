@@ -2,4 +2,7 @@ node_modules
 # Environment files
 .env
 .env.local
-.env.*.local
+.env.*.localbackend/expense_predictor_model.pkl
+backend/expense_training_data.csv
+backend/training_results.json
+backend/prediction_examples.png
