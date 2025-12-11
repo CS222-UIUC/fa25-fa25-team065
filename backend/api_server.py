@@ -35,6 +35,7 @@ EXPENSE_CATEGORIES = [
 def predict_expenses(user_history):
     """
     Predict next month's expenses given user history.
+    Only predicts for categories the user has actually used.
     
     Args:
         user_history: List of dicts with 'month' and category amounts
@@ -57,10 +58,28 @@ def predict_expenses(user_history):
     # Convert to DataFrame
     df = pd.DataFrame(user_history)
     
-    # Ensure all categories are present
+    # Fill any NaN values with 0 (safety measure)
+    df = df.fillna(0)
+    
+    # Identify categories the user has actually used (non-zero values in history)
+    user_categories = set()
+    for cat in EXPENSE_CATEGORIES:
+        if cat in df.columns:
+            # Check if user has any non-zero spending in this category
+            # Convert to numeric first to handle any string values
+            df[cat] = pd.to_numeric(df[cat], errors='coerce').fillna(0)
+            if df[cat].sum() > 0:
+                user_categories.add(cat)
+    
+    logger.info(f"User has used {len(user_categories)} categories: {sorted(user_categories)}")
+    
+    # Ensure all categories are present in DataFrame (for feature building)
     for cat in EXPENSE_CATEGORIES:
         if cat not in df.columns:
             df[cat] = 0
+        else:
+            # Ensure numeric and fill NaN
+            df[cat] = pd.to_numeric(df[cat], errors='coerce').fillna(0)
     
     # Sort by month
     df = df.sort_values('month')
@@ -87,12 +106,18 @@ def predict_expenses(user_history):
     # Create feature DataFrame
     X = pd.DataFrame([features])[model_data['feature_columns']]
     
-    # Predict for each category
+    # Predict ONLY for categories the user has actually used
+    # Set all other categories to 0
     predictions = {}
     for category in EXPENSE_CATEGORIES:
-        X_scaled = model_data['scalers'][category].transform(X)
-        pred = model_data['models'][category].predict(X_scaled)[0]
-        predictions[category] = max(0, round(float(pred), 2))
+        if category in user_categories:
+            # User has used this category - make prediction
+            X_scaled = model_data['scalers'][category].transform(X)
+            pred = model_data['models'][category].predict(X_scaled)[0]
+            predictions[category] = max(0, round(float(pred), 2))
+        else:
+            # User has never used this category - set to 0
+            predictions[category] = 0
     
     total = round(sum(predictions.values()), 2)
     

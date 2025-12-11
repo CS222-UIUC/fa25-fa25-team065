@@ -224,15 +224,27 @@ export default function BudgetDashboard() {
           (monthlyData[expense.month][expense.category] || 0) + expense.amount;
       });
 
-      // Convert to API format
+      // Get all unique categories across all months
+      const allCategories = new Set<string>();
+      Object.values(monthlyData).forEach((categories) => {
+        Object.keys(categories).forEach((cat) => allCategories.add(cat));
+      });
+
+      // Convert to API format - ensure all months have all categories (fill missing with 0)
+      // This prevents NaN values in the backend DataFrame
       const history = Object.entries(monthlyData)
         .sort((a, b) => a[0].localeCompare(b[0]))
-        .map(([month, categories]) => ({
-          month,
-          ...categories,
-        }));
+        .map(([month, categories]) => {
+          const normalized: Record<string, number | string> = { month };
+          // Ensure every category exists in every month, defaulting to 0 if missing
+          allCategories.forEach((cat) => {
+            normalized[cat] = categories[cat] || 0;
+          });
+          return normalized;
+        });
 
       console.log("📤 [Budget] Sending history to API:", history.length, "months");
+      console.log("📤 [Budget] Categories normalized:", Array.from(allCategories).sort());
 
       // Call prediction API
       const response = await fetch(`${API_BASE_URL}/predict`, {
