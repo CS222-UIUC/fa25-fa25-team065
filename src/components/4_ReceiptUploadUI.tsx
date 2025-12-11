@@ -936,9 +936,9 @@ export default function ReceiptUploadUI() {
           <div className="flex items-center gap-2">
             <button
               className="px-3 py-1.5 text-sm rounded-md border border-slate-300 hover:bg-slate-50"
-              onClick={() => navigate("/dashboard")}
+              onClick={() => navigate("/")}
             >
-              Back to Dashboard
+              Back to Home
             </button>
           </div>
         </div>
