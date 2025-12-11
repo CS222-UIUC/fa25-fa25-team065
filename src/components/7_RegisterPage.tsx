@@ -61,7 +61,7 @@ const RegisterPage: React.FC = () => {
         username: user.username
       }));
       
-      navigate('/dashboard');
+      navigate('/');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed. Please try again.');
     } finally {

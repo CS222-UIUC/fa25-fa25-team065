@@ -77,10 +77,10 @@ const ThankYouPage: React.FC = () => {
             Split Another Receipt
           </button>
           <button
-            onClick={() => navigate('/dashboard')}
+            onClick={() => navigate('/')}
             className="btn-secondary text-lg px-8 py-3"
           >
-            Back to Dashboard
+            Back to Home
           </button>
         </div>
 
