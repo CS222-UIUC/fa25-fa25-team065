@@ -98,7 +98,10 @@ The application should now be live at `http://localhost:3000`. This application 
 
 In this project, we all rotated roles but focused specifically on individual aspects. 
 
-| Cindy Zou (cindyz3) | Frontend | Component architecture, state management, Dashboard and UI/UX implementation. |
-| Kaavya Vassa (kvassa2) | Backend & AI | API development, machine learning model training and OCR integration. |
-| Ananya Anand (ananyaa9) | Backend & Database & Auth | Supabase integration, user authentication flow, and data schema design. |
-| Aparna Kudiyirikkal Anil (aparnak5) | Backend & Feature | Receipt upload, budgeting features, and transaction workflow. |
+Cindy Zou (cindyz3) | Frontend | Component architecture, state management, Dashboard and UI/UX implementation.
+
+Kaavya Vassa (kvassa2) | Backend & AI | API development, machine learning model training and OCR integration.
+
+Ananya Anand (ananyaa9) | Backend & Database & Auth | Supabase integration, user authentication flow, and data schema design.
+
+Aparna Kudiyirikkal Anil (aparnak5) | Backend & Feature | Receipt upload, budgeting features, and transaction workflow.
