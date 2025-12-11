@@ -2,9 +2,9 @@ import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-router-dom';
 import { supabase } from './lib/supabase';
 import { getOrCreateUserByAuth } from './lib/supabase';
+import LandingPage from './components/1_LandingPage';
 import LoginPage from './components/2_LoginPage';
 import RegisterPage from './components/7_RegisterPage';
-import Dashboard from './components/3_Dashboard';
 import ReceiptUploadUI from './components/4_ReceiptUploadUI';
 import LineItemsSelectPage from './components/5_LineItemsSelectPage';
 import ThankYouPage from './components/6_ThankYouPage';
@@ -86,8 +86,8 @@ function AppContent() {
         
         // Only navigate on SIGNED_IN (not INITIAL_SESSION to avoid redirect loops)
         if (event === 'SIGNED_IN') {
-          console.log('🔵 [App] Navigating to home...');
-          navigate('/');
+          console.log('🔵 [App] Navigating to notifications page...');
+          navigate('/notifications');
         }
       } else if (event === 'SIGNED_OUT') {
         console.log('🔴 [App] SIGNED_OUT event detected');
@@ -98,12 +98,12 @@ function AppContent() {
         // Navigate to home page if not already there
         const currentPath = window.location.pathname;
         console.log('🔴 [App] Current path:', currentPath);
-        if (currentPath !== '/login') {
-          console.log('🔴 [App] Navigating to login page...');
-          navigate('/login', { replace: true });
+        if (currentPath !== '/') {
+          console.log('🔴 [App] Navigating to landing page...');
+          navigate('/', { replace: true });
           console.log('🔴 [App] Navigation called');
         } else {
-          console.log('🔴 [App] Already on login page, no navigation needed');
+          console.log('🔴 [App] Already on landing page, no navigation needed');
         }
       }
     });
@@ -117,10 +117,9 @@ function AppContent() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 to-secondary-50">
       <Routes>
-        <Route path="/" element={<NotificationsPage />} />
+        <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
-        <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/upload" element={<ReceiptUploadUI />} />
         <Route path="/receipts/:receiptId/select-items" element={<LineItemsSelectPage />} />
         <Route path="/thank-you" element={<ThankYouPage />} />
