@@ -11,6 +11,7 @@ type SplitWithDetails = {
   participant_id: string;
   amount_owed: number;
   split_type: string;
+  is_paid?: boolean;
   receipt?: {
     merchant_name: string | null;
     date_uploaded: string;
@@ -131,8 +132,9 @@ const NotificationsPage: React.FC = () => {
       setSplits(debts);
       setOwedToMe(credits);
 
-      setTotalOwed(Math.round(debts.reduce((sum, s) => sum + (s.amount_owed || 0), 0) * 100) / 100);
-      setTotalOwedToMe(Math.round(credits.reduce((sum, s) => sum + (s.amount_owed || 0), 0) * 100) / 100);
+      // Calculate totals excluding paid splits
+      setTotalOwed(Math.round(debts.reduce((sum, s) => sum + ((s.is_paid ? 0 : s.amount_owed) || 0), 0) * 100) / 100);
+      setTotalOwedToMe(Math.round(credits.reduce((sum, s) => sum + ((s.is_paid ? 0 : s.amount_owed) || 0), 0) * 100) / 100);
 
     } catch (err: any) {
       console.error('Error loading splits:', err);
@@ -248,6 +250,32 @@ const NotificationsPage: React.FC = () => {
 
   const getDisplayName = (obj: any) =>
     obj?.name || obj?.username || obj?.email || 'Unknown';
+
+  // ===========================================================
+  // Mark split as paid
+  // ===========================================================
+  const markAsPaid = async (splitId: string) => {
+    try {
+      const { error } = await supabase
+        .from('splits')
+        .update({ is_paid: true })
+        .eq('id', splitId);
+
+      if (error) {
+        console.error('Error marking split as paid:', error);
+        alert('Failed to mark as paid. Please try again.');
+        return;
+      }
+
+      // Reload splits to reflect the change
+      if (currentUser?.id) {
+        await loadSplits(currentUser.id);
+      }
+    } catch (err: any) {
+      console.error('Error marking split as paid:', err);
+      alert('Failed to mark as paid. Please try again.');
+    }
+  };
 
   const handleSignOut = async () => {
     console.log('🔴 [NotificationsPage] Sign out initiated');
@@ -371,7 +399,7 @@ const NotificationsPage: React.FC = () => {
                   <div>
                     <h2 className="text-lg font-semibold text-secondary-700 mb-1">Who Owes You</h2>
                     <p className="text-sm text-secondary-500">
-                      {owedToMe.length} {owedToMe.length === 1 ? 'person' : 'people'}
+                      {owedToMe.filter(s => !s.is_paid).length} {owedToMe.filter(s => !s.is_paid).length === 1 ? 'person' : 'people'}
                     </p>
                   </div>
                   <div className="text-right">
@@ -382,7 +410,7 @@ const NotificationsPage: React.FC = () => {
                 </div>
               </div>
 
-              {owedToMe.length === 0 ? (
+              {owedToMe.filter(s => !s.is_paid).length === 0 ? (
                 <div className="bg-white rounded-xl shadow-sm border border-secondary-200 p-8 text-center">
                   <svg
                     className="mx-auto h-10 w-10 text-secondary-400"
@@ -404,8 +432,10 @@ const NotificationsPage: React.FC = () => {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {owedToMe.map(s => (
-                    <div key={s.id} className="bg-white rounded-xl shadow-sm border border-secondary-200 p-4 hover:shadow-md transition-shadow">
+                  {owedToMe
+                    .filter(s => !s.is_paid) // Only show unpaid splits
+                    .map(s => (
+                    <div key={s.id} className={`bg-white rounded-xl shadow-sm border p-4 hover:shadow-md transition-shadow ${s.is_paid ? 'opacity-50 border-green-300' : 'border-secondary-200'}`}>
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
                           <div className="flex items-center space-x-2 mb-1">
@@ -417,6 +447,11 @@ const NotificationsPage: React.FC = () => {
                                 {formatDate(s.receipt.date_uploaded)}
                               </span>
                             )}
+                            {s.is_paid && (
+                              <span className="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded-full">
+                                Paid
+                              </span>
+                            )}
                           </div>
                           <div className="flex items-center space-x-2 text-sm text-secondary-600">
                             <span className="font-semibold text-secondary-900">
@@ -425,10 +460,18 @@ const NotificationsPage: React.FC = () => {
                             <span>owes you</span>
                           </div>
                         </div>
-                        <div className="text-right ml-3">
-                          <p className="text-xl font-bold text-green-600">
+                        <div className="text-right ml-3 flex flex-col items-end gap-2">
+                          <p className={`text-xl font-bold ${s.is_paid ? 'text-gray-400 line-through' : 'text-green-600'}`}>
                             {formatCurrency(s.amount_owed)}
                           </p>
+                          {!s.is_paid && (
+                            <button
+                              onClick={() => markAsPaid(s.id)}
+                              className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
+                            >
+                              Mark as Paid
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -444,7 +487,7 @@ const NotificationsPage: React.FC = () => {
                   <div>
                     <h2 className="text-lg font-semibold text-secondary-700 mb-1">Your Debts</h2>
                     <p className="text-sm text-secondary-500">
-                      {splits.length} {splits.length === 1 ? 'debt' : 'debts'}
+                      {splits.filter(s => !s.is_paid).length} {splits.filter(s => !s.is_paid).length === 1 ? 'debt' : 'debts'}
                     </p>
                   </div>
                   <div className="text-right">
@@ -455,7 +498,7 @@ const NotificationsPage: React.FC = () => {
                 </div>
               </div>
 
-              {splits.length === 0 ? (
+              {splits.filter(s => !s.is_paid).length === 0 ? (
                 <div className="bg-white rounded-xl shadow-sm border border-secondary-200 p-8 text-center">
                   <svg
                     className="mx-auto h-10 w-10 text-secondary-400"
@@ -477,7 +520,9 @@ const NotificationsPage: React.FC = () => {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {splits.map(s => (
+                  {splits
+                    .filter(s => !s.is_paid) // Only show unpaid debts
+                    .map(s => (
                     <div key={s.id} className="bg-white rounded-xl shadow-sm border border-secondary-200 p-4 hover:shadow-md transition-shadow">
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
