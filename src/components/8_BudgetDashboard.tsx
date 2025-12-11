@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 type Expense = {
   id: string;
@@ -7,6 +8,7 @@ type Expense = {
 };
 
 export default function BudgetDashboard() {
+  const navigate = useNavigate();
   const [budget, setBudget] = useState(2000);
   const [expenses, setExpenses] = useState<Expense[]>([
     { id: "1", category: "Groceries", amount: 180 },
@@ -43,9 +45,9 @@ export default function BudgetDashboard() {
           </h1>
           <button
             className="px-3 py-1.5 text-sm rounded-md border border-secondary-300 hover:bg-secondary-100 text-secondary-700"
-            onClick={() => (window.location.href = "/dashboard")}
+            onClick={() => navigate("/")}
           >
-            Back to Dashboard
+            Back to Home
           </button>
         </div>
       </header>

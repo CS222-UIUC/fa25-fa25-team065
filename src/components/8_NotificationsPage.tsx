@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { getOrCreateUserByAuth } from '../lib/supabase';
+import { SupabaseAuthService } from '../services/supabaseAuthService';
 
 type SplitWithDetails = {
   id: string;
@@ -37,6 +39,7 @@ const NotificationsPage: React.FC = () => {
   const [totalOwed, setTotalOwed] = useState(0);
   const [totalOwedToMe, setTotalOwedToMe] = useState(0);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   // ===========================================================
   // 1️⃣ Fetch splits, receipts, users
@@ -147,14 +150,61 @@ const NotificationsPage: React.FC = () => {
     // Wait for Supabase to restore session (prevents RLS race)
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user) {
-      navigate('/dashboard');
+      navigate('/login');
       return;
     }
 
     // Load user from localStorage
-    const stored = localStorage.getItem('user');
+    let stored = localStorage.getItem('user');
+    
+    // If localStorage is empty but session exists, restore user data
     if (!stored) {
-      navigate('/dashboard');
+      console.log('🔵 [NotificationsPage] localStorage empty, restoring from session...');
+      try {
+        const email = session.user.email ?? null;
+        const name = session.user.user_metadata?.full_name || 
+                    session.user.user_metadata?.name || 
+                    null;
+        
+        const userId = await getOrCreateUserByAuth(session.user.id, email, name);
+        
+        // Fetch user data from users table
+        const { data: userData, error } = await supabase
+          .from('users')
+          .select('id, email, username, name')
+          .eq('id', userId)
+          .single();
+
+        if (error) {
+          console.error('❌ [NotificationsPage] Error fetching user data:', error);
+          navigate('/login');
+          return;
+        }
+
+        // Store user data in localStorage
+        if (userData) {
+          const userObj = {
+            id: userData.id,
+            email: userData.email,
+            username: userData.username,
+            name: userData.name
+          };
+          localStorage.setItem('user', JSON.stringify(userObj));
+          stored = JSON.stringify(userObj);
+          console.log('🔵 [NotificationsPage] User data restored:', userObj);
+        } else {
+          navigate('/login');
+          return;
+        }
+      } catch (error) {
+        console.error('❌ [NotificationsPage] Error restoring user from session:', error);
+        navigate('/login');
+        return;
+      }
+    }
+
+    if (!stored) {
+      navigate('/login');
       return;
     }
 
@@ -199,6 +249,38 @@ const NotificationsPage: React.FC = () => {
   const getDisplayName = (obj: any) =>
     obj?.name || obj?.username || obj?.email || 'Unknown';
 
+  const handleSignOut = async () => {
+    console.log('🔴 [NotificationsPage] Sign out initiated');
+    setIsSigningOut(true);
+    
+    // Clear localStorage immediately
+    console.log('🔴 [NotificationsPage] Clearing localStorage...');
+    localStorage.removeItem('user');
+    console.log('🔴 [NotificationsPage] localStorage cleared');
+    
+    // Navigate immediately (don't wait for signOut)
+    console.log('🔴 [NotificationsPage] Navigating to login page...');
+    navigate('/login', { replace: true });
+    console.log('🔴 [NotificationsPage] Navigation called');
+    
+    // Try to sign out from Supabase in the background (don't block on it)
+    try {
+      console.log('🔴 [NotificationsPage] Calling SupabaseAuthService.signOut()...');
+      const signOutPromise = SupabaseAuthService.signOut();
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Sign out timeout')), 3000)
+      );
+      
+      await Promise.race([signOutPromise, timeoutPromise]);
+      console.log('🔴 [NotificationsPage] SupabaseAuthService.signOut() completed successfully');
+    } catch (error) {
+      console.error('❌ [NotificationsPage] Sign out error (non-blocking):', error);
+    } finally {
+      console.log('🔴 [NotificationsPage] Setting isSigningOut to false');
+      setIsSigningOut(false);
+    }
+  };
+
   // ===========================================================
   // Render
   // ===========================================================
@@ -209,19 +291,38 @@ const NotificationsPage: React.FC = () => {
       <nav className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => navigate('/dashboard')}
-                className="text-secondary-600 hover:text-secondary-900"
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-              </button>
+            <div className="flex items-center">
               <h1 className="text-2xl font-bold text-primary-600">Splitify</h1>
             </div>
             <div className="flex items-center space-x-4">
+              <button
+                onClick={() => navigate("/upload")}
+                className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 flex items-center space-x-2 transition-colors"
+                title="Upload Receipt"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                <span>Upload Receipt</span>
+              </button>
+              <button
+                onClick={() => navigate("/budget")}
+                className="text-secondary-600 hover:text-secondary-900 flex items-center space-x-1"
+                title="Budget Dashboard"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                <span className="text-sm">Budget</span>
+              </button>
               <span className="text-secondary-600">Welcome, {getDisplayName(currentUser)}!</span>
+              <button 
+                onClick={handleSignOut}
+                disabled={isSigningOut}
+                className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSigningOut ? 'Signing out...' : 'Sign Out'}
+              </button>
             </div>
           </div>
         </div>

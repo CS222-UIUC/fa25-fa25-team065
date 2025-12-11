@@ -2,7 +2,6 @@ import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-router-dom';
 import { supabase } from './lib/supabase';
 import { getOrCreateUserByAuth } from './lib/supabase';
-import LandingPage from './components/1_LandingPage';
 import LoginPage from './components/2_LoginPage';
 import RegisterPage from './components/7_RegisterPage';
 import Dashboard from './components/3_Dashboard';
@@ -15,54 +14,80 @@ import BudgetDashboard from './components/8_BudgetDashboard';
 function AppContent() {
   const navigate = useNavigate();
 
+  // Helper function to restore user data from session
+  const restoreUserFromSession = async (session: any) => {
+    if (!session?.user) return;
+    
+    try {
+      const email = session.user.email ?? null;
+      // Extract name from Google OAuth user metadata
+      // Google provides name in user_metadata.full_name or user_metadata.name
+      const name = session.user.user_metadata?.full_name || 
+                  session.user.user_metadata?.name || 
+                  null;
+      console.log('🔵 [App] Extracted email:', email, 'name:', name);
+      
+      const userId = await getOrCreateUserByAuth(session.user.id, email, name);
+      console.log('🔵 [App] User ID:', userId);
+      
+      // Fetch user data from users table
+      const { data: userData, error } = await supabase
+        .from('users')
+        .select('id, email, username, name')
+        .eq('id', userId)
+        .single();
+
+      if (error) {
+        console.error('❌ [App] Error fetching user data:', error);
+        return;
+      }
+
+      // Store user data in localStorage
+      if (userData) {
+        console.log('🔵 [App] Storing user data in localStorage:', userData);
+        localStorage.setItem('user', JSON.stringify({
+          id: userData.id,
+          email: userData.email,
+          username: userData.username,
+          name: userData.name
+        }));
+      }
+    } catch (error) {
+      console.error('❌ [App] Error restoring user from session:', error);
+    }
+  };
+
+  // Check for existing session on mount
+  useEffect(() => {
+    const checkExistingSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        // Check if localStorage has user data
+        const storedUser = localStorage.getItem('user');
+        if (!storedUser) {
+          console.log('🔵 [App] Session exists but localStorage is empty, restoring...');
+          await restoreUserFromSession(session);
+        }
+      }
+    };
+    checkExistingSession();
+  }, []);
+
   useEffect(() => {
     console.log('🔵 [App] Setting up auth state listener...');
     // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('🔵 [App] Auth state change event:', event, 'Session:', session ? 'exists' : 'null');
       
-      if (event === 'SIGNED_IN' && session?.user) {
-        console.log('🔵 [App] SIGNED_IN event detected');
-        try {
-          const email = session.user.email ?? null;
-          // Extract name from Google OAuth user metadata
-          // Google provides name in user_metadata.full_name or user_metadata.name
-          const name = session.user.user_metadata?.full_name || 
-                      session.user.user_metadata?.name || 
-                      null;
-          console.log('🔵 [App] Extracted email:', email, 'name:', name);
-          
-          const userId = await getOrCreateUserByAuth(session.user.id, email, name);
-          console.log('🔵 [App] User ID:', userId);
-          
-          // Fetch user data from users table
-          const { data: userData, error } = await supabase
-            .from('users')
-            .select('id, email, username, name')
-            .eq('id', userId)
-            .single();
-
-          if (error) {
-            console.error('❌ [App] Error fetching user data:', error);
-            return;
-          }
-
-          // Store user data in localStorage
-          if (userData) {
-            console.log('🔵 [App] Storing user data in localStorage:', userData);
-            localStorage.setItem('user', JSON.stringify({
-              id: userData.id,
-              email: userData.email,
-              username: userData.username,
-              name: userData.name
-            }));
-          }
-
-          // Redirect to dashboard
-          console.log('🔵 [App] Navigating to dashboard...');
-          navigate('/dashboard');
-        } catch (error) {
-          console.error('❌ [App] Error handling SIGNED_IN event:', error);
+      // Handle both SIGNED_IN and INITIAL_SESSION events
+      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session?.user) {
+        console.log('🔵 [App] SIGNED_IN/INITIAL_SESSION event detected');
+        await restoreUserFromSession(session);
+        
+        // Only navigate on SIGNED_IN (not INITIAL_SESSION to avoid redirect loops)
+        if (event === 'SIGNED_IN') {
+          console.log('🔵 [App] Navigating to home...');
+          navigate('/');
         }
       } else if (event === 'SIGNED_OUT') {
         console.log('🔴 [App] SIGNED_OUT event detected');
@@ -73,12 +98,12 @@ function AppContent() {
         // Navigate to home page if not already there
         const currentPath = window.location.pathname;
         console.log('🔴 [App] Current path:', currentPath);
-        if (currentPath !== '/') {
-          console.log('🔴 [App] Navigating to landing page...');
-          navigate('/', { replace: true });
+        if (currentPath !== '/login') {
+          console.log('🔴 [App] Navigating to login page...');
+          navigate('/login', { replace: true });
           console.log('🔴 [App] Navigation called');
         } else {
-          console.log('🔴 [App] Already on landing page, no navigation needed');
+          console.log('🔴 [App] Already on login page, no navigation needed');
         }
       }
     });
@@ -92,7 +117,7 @@ function AppContent() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 to-secondary-50">
       <Routes>
-        <Route path="/" element={<LandingPage />} />
+        <Route path="/" element={<NotificationsPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/dashboard" element={<Dashboard />} />

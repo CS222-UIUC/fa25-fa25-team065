@@ -16,8 +16,8 @@ const Dashboard: React.FC = () => {
     console.log('🔴 [Dashboard] localStorage cleared');
     
     // Navigate immediately (don't wait for signOut)
-    console.log('🔴 [Dashboard] Navigating to landing page...');
-    navigate('/', { replace: true });
+    console.log('🔴 [Dashboard] Navigating to login page...');
+    navigate('/login', { replace: true });
     console.log('🔴 [Dashboard] Navigation called');
     
     // Try to sign out from Supabase in the background (don't block on it)
