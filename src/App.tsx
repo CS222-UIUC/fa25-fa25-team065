@@ -10,6 +10,7 @@ import LineItemsSelectPage from './components/5_LineItemsSelectPage';
 import ThankYouPage from './components/6_ThankYouPage';
 import NotificationsPage from './components/8_NotificationsPage';
 import BudgetDashboard from './components/8_BudgetDashboard';
+import ChatWidget from './components/ChatWidget';
 
 function AppContent() {
   const navigate = useNavigate();
@@ -134,6 +135,7 @@ function App() {
   return (
     <Router>
       <AppContent />
+      <ChatWidget />
     </Router>
   );
 }

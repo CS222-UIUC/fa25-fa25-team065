@@ -1,5 +1,5 @@
 """
-Flask API server for expense prediction.
+Flask API server for expense prediction and chatbot.
 Provides endpoints to get predictions based on user's expense history.
 """
 
@@ -10,6 +10,10 @@ import pickle
 import numpy as np
 from datetime import datetime
 import logging
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -17,6 +21,10 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for React frontend
+
+# Register chatbot blueprint
+from chatbot_service import chatbot_bp
+app.register_blueprint(chatbot_bp)
 
 # Load the trained model
 try:
