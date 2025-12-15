@@ -19,7 +19,7 @@ The project follows a standard three-tier architecture: Presentation (Frontend),
 
 
 ## Components
-![Main Dashboard Screenshot](assets/222img.png)
+![Main Dashboard Screenshot](assets/overview.png)
 
 ### A. Frontend
 
